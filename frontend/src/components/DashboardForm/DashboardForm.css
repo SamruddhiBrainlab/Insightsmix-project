@@ -1,0 +1,52 @@
+.dashboard-form {
+    padding: 16px;
+  }
+  
+  .form-container {
+    padding: 24px;
+    border-radius: 8px;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .form-group {
+    margin-bottom: 16px;
+  }
+  
+  /* Add styles for reducing TextField height */
+  .form-group .MuiInputBase-root {
+    height: 32px;
+    min-height: 32px;
+  }
+  
+  .form-group .MuiInputBase-input {
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+  }
+  
+  .form-group .MuiSelect-select {
+    padding-top: 2px;
+    padding-bottom: 2px;
+    line-height: 1.2;
+  }
+  
+  .file-input {
+    margin-top: 8px;
+    height: 32px;
+    padding: 2px 12px;
+  }
+  
+  .required {
+    color: red;
+    margin-left: 4px;
+  }
+  
+  .form-actions {
+    margin-top: 24px;
+    text-align: center;
+  }
+  
+  .form-group label {
+    margin-bottom: 4px;
+    display: block;
+    font-size: small;
+  }

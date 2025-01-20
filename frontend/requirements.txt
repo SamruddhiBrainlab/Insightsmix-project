@@ -1,0 +1,5 @@
+dompurify
+vega
+vega-lite 
+vega-embed
+react-markdown @/components/ui/tabs @/components/ui/card
