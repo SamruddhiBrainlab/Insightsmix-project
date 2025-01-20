@@ -89,8 +89,8 @@ const StyledNavLink = styled(NavLink)({
 const navItems = [
   { icon: <Lightbulb />, path: "/dashboard", label: "Insights", exact: true },
   { icon: <Cpu />, path: "/dashboard/eda-report", label: "EDA Report" },
-  { icon: <LocateFixed />, path: "/dashboard/mmm-model-summary", label: "MMM model summary" },
-  { icon: <Dice4 />, path: "/dashboard/mso-optimization-results", label: "MSO-Optimization results" },
+  { icon: <LocateFixed />, path: "/dashboard/mmm-model-summary", label: "MMM Model Summary" },
+  { icon: <Dice4 />, path: "/dashboard/mso-optimization-results", label: "MSO-Optimization Results" },
   { icon: <BrainCog/>, path: "/dashboard/gen-ai-explanation", label: "Gen AI Explanation"},
 ];
 
