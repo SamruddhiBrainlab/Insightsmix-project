@@ -1,0 +1,10 @@
+Flask
+Flask-Cors
+docker
+google-cloud-aiplatform
+pandas
+Flask-SQLAlchemy==3.0.5
+Flask-Migrate==4.0.4
+pymysql==1.0.3
+pandas-profiling
+pdfkit==1.0.0
