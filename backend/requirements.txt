@@ -8,3 +8,7 @@ Flask-Migrate==4.0.4
 pymysql==1.0.3
 pandas-profiling
 pdfkit==1.0.0
+google-cloud-storage
+python-dotenv
+setuptools
+ydata-profiling

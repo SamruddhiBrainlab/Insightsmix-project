@@ -7,7 +7,6 @@ from api.models import User, Project
 from .db import db
 import pandas as pd
 from ydata_profiling import ProfileReport
-from google.cloud import storage
 import base64
 import pdfkit
 import vertexai
@@ -17,6 +16,7 @@ from vertexai.generative_models import GenerativeModel, Part, SafetySetting
 from .summary_prompt import summary_prompt
 from dotenv import load_dotenv
 load_dotenv()
+
 
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 aiplatform.init(project="insightsmix")
@@ -29,7 +29,6 @@ class GCSUploader:
         """
         Initialize the GCSUploader
         """
-        self.storage_client = storage.Client()
         self.project_name = project_name
 
     def create_timestamp_folder(self):
@@ -44,7 +43,7 @@ class GCSUploader:
         Upload file data to GCS
         """
         try:
-            bucket = self.storage_client.bucket(BUCKET_NAME)
+            bucket = client.bucket(BUCKET_NAME)
             blob = bucket.blob(destination_path)
             blob.upload_from_string(file_data, content_type='text/csv')
             return f"gs://{BUCKET_NAME}/{destination_path}"
@@ -274,7 +273,7 @@ def get_report_from_gcs(job_id, user_email, gcs_file_name):
         user = User.query.filter_by(email=user_email).first()
         if not user:
             return {'error': 'User not found'}, 404
-        print(job_id)
+
         project = Project.query.filter_by(job_id=job_id, user_id=user.id).first()
         if not project:
             return {'error': 'Project not found for this user'}, 404
@@ -282,7 +281,6 @@ def get_report_from_gcs(job_id, user_email, gcs_file_name):
         gcs_path = project.gcs_path
         file_path_in_gcs = os.path.join(gcs_path, gcs_file_name)
 
-        client = storage.Client()
         bucket = client.bucket(BUCKET_NAME)
         blob = bucket.blob(file_path_in_gcs)
 
@@ -292,6 +290,8 @@ def get_report_from_gcs(job_id, user_email, gcs_file_name):
         # Download and decode the content with proper encoding
         file_content = blob.download_as_text(encoding='utf-8')
         
+        if gcs_file_name == "MMM_summary.md" or gcs_file_name == "MSO_summary.md":
+            file_content = file_content.replace("\n*\n", "*").replace("\n**\n", "**")
         return {"file_content": file_content}, 200
 
     except Exception as e:
@@ -308,8 +308,7 @@ def generate_pdf_summary(input_file_path, summary_file_path):
     """
     try:
         # Initialize GCS client
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(BUCKET_NAME)
+        bucket = client.bucket(BUCKET_NAME)
         blob = bucket.blob(input_file_path)
         
         # Create a temporary file to store the HTML content
@@ -384,11 +383,15 @@ def generate_pdf_summary(input_file_path, summary_file_path):
 
         # Define the file path in GCS
         blob = bucket.blob(summary_file_path)
-
+        line_count = 0
         with blob.open("w") as file:
             for response in responses:
-                # Write each response to the file on GCS
-                file.write(response.text + "\n")
+                if line_count:
+                    # Write each response to the file on GCS
+                    file.write(response.text + "\n")
+                    line_count += 1
+                else:
+                    file.write(response.text)
     
     except Exception as e:
         print(f"Error processing file: {str(e)}")

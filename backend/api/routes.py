@@ -5,7 +5,6 @@ from datetime import datetime
 from flask import Blueprint, Response, request, jsonify, send_file, current_app
 from .services import *
 from werkzeug.utils import secure_filename
-from google.cloud import storage
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -202,7 +201,10 @@ def get_md_files():
         user_email = request.args.get('email')
         file_name = request.args.get('filename')
         print(job_id, user_email, file_name)
-        content, status_code = get_summary_files(job_id, user_email, file_name)
+        try:
+            content, status_code = get_summary_files(job_id, user_email, file_name)
+        except Exception as e:
+            content, status_code = get_summary_files(job_id, user_email, file_name)
         if status_code != 200:
             return jsonify(content), status_code
             

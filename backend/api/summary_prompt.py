@@ -1,4 +1,5 @@
-summary_prompt = """Analyze the provided PDF filled with charts and results to generate pure pointers focusing on key takeaways. Do not include any extra text or commentary, especially negative remarks about the modeling. Avoid using the term "non-technical" as this content will be read by technical individuals.
+summary_prompt = """Analyze the provided PDF filled with charts and results to generate pure pointers focusing on key takeaways. 
+Important Note: Do not include any extra text or commentary, especially negative remarks about the model fit. Avoid using the term "non-technical" as this content will be read by technical individuals.
 
 # Steps
 

@@ -38,13 +38,14 @@ const GenAISummary = ({ selectedProject }) => {
     if (selectedProject) {
       setIsLoading(true);
       setError(null);
-
-      Promise.all([
-        fetchMarkdownContent("MMM_summary.md"),
-        fetchMarkdownContent("MSO_summary.md"),
-      ])
-        .then(([mmmData, msoData]) => {
+  
+      fetchMarkdownContent("MMM_summary.md")
+        .then((mmmData) => {
           setMmmContent(mmmData);
+          // After MMM completes, fetch MSO
+          return fetchMarkdownContent("MSO_summary.md");
+        })
+        .then((msoData) => {
           setMsoContent(msoData);
           setIsLoading(false);
         })
