@@ -4,8 +4,7 @@ import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 import "./Login.css";
 import Header from "./Header";
 
-const clientId =
-  "879937724118-416ii7rmvls5o60gk5i7678d71md55cn.apps.googleusercontent.com";
+const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
 function Login({ setUser }) {
   const navigate = useNavigate();
