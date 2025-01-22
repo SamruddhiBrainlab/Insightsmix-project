@@ -14,15 +14,18 @@ function Login({ setUser }) {
       ? JSON.parse(atob(credentialResponse.credential.split(".")[1]))
       : null;
     if (userData) {
-      setUser(userData);
-      const saveUser = (userData) => {
-        if (userData.picture && !userData.picture.startsWith('http')) {
-          userData.picture = `${window.location.origin}${userData.picture}`;
-        }
-        localStorage.setItem('user', JSON.stringify(userData));
+      // Modify the picture URL to use a fresh token
+      const timestamp = new Date().getTime();
+      const modifiedPicture = userData.picture.split('?')[0] + '?v=' + timestamp;
+      
+      const userDataWithModifiedPicture = {
+        ...userData,
+        picture: modifiedPicture
       };
+      
+      setUser(userDataWithModifiedPicture);
+      localStorage.setItem("user", JSON.stringify(userDataWithModifiedPicture));
     }
-    console.log(localStorage.getItem('user'))
     navigate("/dashboard");
   };
 

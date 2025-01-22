@@ -22,7 +22,6 @@ const ProfileImage = ({ src, alt, className }) => {
     setImageError(false);
     setImageSrc(src);
 
-    // Preload image
     const img = new Image();
     
     img.onload = () => {
@@ -31,10 +30,10 @@ const ProfileImage = ({ src, alt, className }) => {
     };
 
     img.onerror = () => {
-      // If the image fails to load, try loading it again with a cache-busting query parameter
-      const retryUrl = `${src}${src.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
+      const timestamp = new Date().getTime();
+      const retryUrl = `${src}${src.includes('?') ? '&' : '?'}t=${timestamp}`;
       const retryImg = new Image();
-      
+
       retryImg.onload = () => {
         setImageSrc(retryUrl);
         setImageError(false);
@@ -50,7 +49,6 @@ const ProfileImage = ({ src, alt, className }) => {
 
     img.src = src;
 
-    // Cleanup
     return () => {
       img.onload = null;
       img.onerror = null;
@@ -73,12 +71,7 @@ const ProfileImage = ({ src, alt, className }) => {
         <img
           src={imageSrc}
           alt={alt}
-          onError={(e) => {
-            console.warn('Image render error:', e);
-            setImageError(true);
-          }}
-          crossOrigin="anonymous"
-          loading="eager"
+          onError={() => setImageError(true)}
           referrerPolicy="no-referrer"
         />
       ) : (
