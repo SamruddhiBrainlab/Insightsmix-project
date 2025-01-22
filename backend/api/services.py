@@ -292,6 +292,9 @@ def get_report_from_gcs(job_id, user_email, gcs_file_name):
         
         if gcs_file_name == "MMM_summary.md" or gcs_file_name == "MSO_summary.md":
             file_content = file_content.replace("\n*\n", "*").replace("\n**\n", "**")
+
+        if gcs_file_name == "eda_report.html":
+            file_content = file_content.replace("Pandas Profiling Report", "EDA Report")
         return {"file_content": file_content}, 200
 
     except Exception as e:
@@ -325,8 +328,8 @@ def generate_pdf_summary(input_file_path, summary_file_path):
             'disable-external-links': True
         }
 
-        # Convert HTML to PDF
-        pdfkit.from_file(temp_html, temp_pdf, options=options)
+        config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
+        pdfkit.from_file(temp_html, temp_pdf, options=options,configuration=config)
 
         # Read PDF file and encode to base64
         with open(temp_pdf, 'rb') as pdf_file:
