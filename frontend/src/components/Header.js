@@ -8,10 +8,9 @@ import {
   styled,
   Menu,
   MenuItem,
-  IconButton
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import ProfileImage from './ProfileImage';
 
 // Styled components remain the same...
 const StyledAppBar = styled(AppBar)(() => ({
@@ -52,13 +51,6 @@ const UserProfile = styled(Box)({
   '&:hover': {
     opacity: 0.8,
   },
-});
-
-const ProfileImage = styled('img')({
-  width: '40px',
-  height: '40px',
-  borderRadius: '50%',
-  marginRight: '8px',
 });
 
 const UserName = styled(Typography)({

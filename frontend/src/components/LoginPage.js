@@ -15,7 +15,12 @@ function Login({ setUser }) {
       : null;
     if (userData) {
       setUser(userData);
-      localStorage.setItem("user", JSON.stringify(userData)); // Store user data in localStorage
+      const saveUser = (userData) => {
+        if (userData.picture && !userData.picture.startsWith('http')) {
+          userData.picture = `${window.location.origin}${userData.picture}`;
+        }
+        localStorage.setItem('user', JSON.stringify(userData));
+      };
     }
     console.log(localStorage.getItem('user'))
     navigate("/dashboard");
