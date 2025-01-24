@@ -24,18 +24,12 @@ RUN python --version && pip --version
 COPY requirements.txt .
 
 # Install Python dependencies, including the private GitHub repository
-ARG GITHUB_TOKEN
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir --upgrade git+https://${GITHUB_TOKEN}@github.com/Anubhavbrainlabs/meridian.git
-
-# Debug CUDA, cuDNN, and TensorFlow GPU availability
-# RUN nvcc --version && \
-#     python -c "import tensorflow as tf; print(tf.__version__); print('GPU Available:', tf.config.list_physical_devices('GPU'))"
+# ARG GITHUB_TOKEN
+RUN pip install --no-cache-dir -r requirements.txt
+#     pip install --no-cache-dir --upgrade git+https://${GITHUB_TOKEN}@github.com/Anubhavbrainlabs/meridian.git
 
 # Copy the training script
 COPY train.py .
 
-# Entry point for the training script
-# ENTRYPOINT ["python", "train2.py", "--project_id", "insightsmix", "--bucket_name", "mmm-data-test", "--data_path", "input-data/geo_media.csv", "--output_path", "mmm"]
 ENTRYPOINT ["python", "train.py"]
 

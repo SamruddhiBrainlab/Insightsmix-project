@@ -264,8 +264,6 @@ def update_job_status(state, job_id):
         project.status = new_status
         db.session.commit()
         print(f"Updated project {job_id} status to {new_status}.")
-    else:
-        print(f"Project with job_id {job_id} not found.")
 
 
 def get_report_from_gcs(job_id, user_email, gcs_file_name):
@@ -328,8 +326,8 @@ def generate_pdf_summary(input_file_path, summary_file_path):
             'disable-external-links': True
         }
 
-        config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
-        pdfkit.from_file(temp_html, temp_pdf, options=options,configuration=config)
+        # config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
+        pdfkit.from_file(temp_html, temp_pdf, options=options)
 
         # Read PDF file and encode to base64
         with open(temp_pdf, 'rb') as pdf_file:

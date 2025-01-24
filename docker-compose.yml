@@ -1,0 +1,37 @@
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - ENV=development
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/backend/config/insightsmix-cda5c2afe3e7.json
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend/config/insightsmix-cda5c2afe3e7.json:/app/backend/config/insightsmix-cda5c2afe3e7.json
+    platform: linux/arm64
+    restart: always
+
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
+    platform: linux/arm64
+    restart: always
+
+  vertez:
+    build:
+      context: ./vertez
+      dockerfile: Dockerfile
+      args:
+        - GITHUB_TOKEN=${GITHUB_TOKEN}
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    platform: linux/arm64
+    restart: always
