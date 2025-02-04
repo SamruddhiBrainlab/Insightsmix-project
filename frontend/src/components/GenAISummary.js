@@ -23,7 +23,7 @@ const GenAISummary = ({ selectedProject }) => {
 
   const fetchMarkdownContent = (filename) => {
     return fetch(
-      `/api/genai-summary-files?job_id=${selectedProject}&email=${user.email}&filename=${filename}`
+      `/api/genai-summary-files?project_id=${selectedProject}&email=${user.email}&filename=${filename}`
     ).then((response) => {
       if (!response.ok) {
         throw new Error(

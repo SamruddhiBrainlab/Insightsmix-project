@@ -80,7 +80,7 @@ const ProjectSelection = ({ selectedTab, onProjectSelect, selectedProject, compa
             >
               <option value="">Select a project...</option>
               {projects.map((project) => (
-                <option key={project.job_id} value={project.job_id}>
+                <option key={project.project_id} value={project.project_id}>
                   {project.name}
                 </option>
               ))}

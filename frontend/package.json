@@ -17,6 +17,7 @@
     "react-markdown": "^9.0.3",
     "react-router-dom": "^7.1.1",
     "react-scripts": "5.0.1",
+    "remark-gfm": "^4.0.0",
     "vega": "^5.30.0",
     "vega-embed": "^6.29.0",
     "vega-lite": "^5.23.0",

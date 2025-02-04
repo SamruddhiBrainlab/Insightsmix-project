@@ -20,8 +20,10 @@ class ProjectStatus(Enum):
 class Project(db.Model):
     __tablename__ = 'projects'
 
-    job_id = db.Column(db.String(100), primary_key=True)  # Use job_id as the primary key
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.String(100), nullable=True)  # Use job_id as the primary key
     name = db.Column(db.String(100), nullable=False)
+    source_file_name = db.Column(db.String(100), nullable=False)
     gcs_path = db.Column(db.String(255), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     status = db.Column(SQLAlchemyEnum(ProjectStatus), nullable=False, default=ProjectStatus.PENDING)  # Enum column for status

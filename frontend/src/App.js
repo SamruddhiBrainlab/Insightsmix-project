@@ -63,14 +63,14 @@ function App() {
         <Route 
           path="/" 
           element={
-            user ? <Navigate to="/dashboard" replace /> : <HomePage />
+            user ? <Navigate to="/dashboard/insights" replace /> : <HomePage />
           } 
         />
         <Route 
           path="/login" 
           element={
             user ? (
-              <Navigate to="/dashboard" replace />
+              <Navigate to="/dashboard/insights" replace />
             ) : (
               <LoginPage setUser={(userData) => {
                 setUser(userData);

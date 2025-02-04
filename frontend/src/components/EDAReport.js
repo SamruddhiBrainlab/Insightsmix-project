@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Paper, Box, CircularProgress, Typography, Button } from '@mui/material';
-import { Error as ErrorIcon } from '@mui/icons-material';
+import { Error as ErrorIcon, Download as DownloadIcon } from '@mui/icons-material';
 
 const EDAReport = ({ selectedProject }) => {
   const user = localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user")) : null;
@@ -9,7 +9,33 @@ const EDAReport = ({ selectedProject }) => {
   const [error, setError] = useState(null);
   const [prevSelectedProject, setPrevSelectedProject] = useState(null);
 
-  // Function to load scripts sequentially
+  const handleDownload = () => {
+    try {
+      // Create a Blob containing the HTML content
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      
+      // Create a temporary URL for the Blob
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create a temporary anchor element
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `eda_report_${selectedProject}.html`;
+      
+      // Append to document, click, and remove
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the URL
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading report:", error);
+      setError("Failed to download report");
+    }
+  };
+
+  // [Previous loadScript and executeScripts functions remain the same]
   const loadScript = (src) => {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
@@ -21,21 +47,17 @@ const EDAReport = ({ selectedProject }) => {
     });
   };
 
-  // Function to execute scripts inside the fetched HTML
   const executeScripts = async (container) => {
     try {
-      // First, load all required libraries
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/vega/5.22.1/vega.min.js");
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/vega-lite/5.6.0/vega-lite.min.js");
       await loadScript("https://cdnjs.cloudflare.com/ajax/libs/vega-embed/6.21.0/vega-embed.min.js");
 
-      // Now execute the scripts from the container
       const scripts = container.getElementsByTagName("script");
       for (let script of scripts) {
         if (script.src) {
           await loadScript(script.src);
         } else {
-          // For inline scripts, wait for a small delay to ensure libraries are ready
           await new Promise(resolve => setTimeout(resolve, 100));
           const newScript = document.createElement("script");
           newScript.textContent = script.textContent;
@@ -47,7 +69,6 @@ const EDAReport = ({ selectedProject }) => {
         }
       }
 
-      // Initialize any Vega visualizations
       const vegaContainers = document.querySelectorAll('[data-vega-spec]');
       for (const container of vegaContainers) {
         try {
@@ -198,29 +219,43 @@ const EDAReport = ({ selectedProject }) => {
 
   return (
     <Paper 
-      elevation={1}  // Controls shadow depth (1-24)
+      elevation={1}
       sx={{
-        mt: 4,       // margin top: 4 * theme spacing
+        mt: 4,
         borderRadius: 1,
         overflow: 'hidden'
       }}
     >
+      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'flex-end' }}>
+        <Button
+          variant="contained"
+          startIcon={<DownloadIcon />}
+          onClick={handleDownload}
+          sx={{
+            bgcolor: 'primary.main',
+            '&:hover': {
+              bgcolor: 'primary.dark'
+            }
+          }}
+        >
+          Download Report
+        </Button>
+      </Box>
       <Box
         dangerouslySetInnerHTML={{ __html: htmlContent }}
         sx={{
-          p: 3,      // padding: 3 * theme spacing
+          p: 3,
           maxWidth: '100%',
           overflowX: 'auto',
           overflowY: 'auto',
           maxHeight: 'calc(100vh - 60px)',
-          // If you need to style the content itself:
-          '& > *': {  // Targets direct children of the HTML content
+          '& > *': {
             maxWidth: '100%'
           }
         }}
       />
     </Paper>
-      );
+  );
 };
 
 export default EDAReport;

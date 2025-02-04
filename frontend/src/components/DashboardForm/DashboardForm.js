@@ -9,7 +9,6 @@ const DashboardForm = () => {
   const isSmallScreen = useMediaQuery(theme.breakpoints.down("sm"));
   const fileInputRef = useRef(null);
 
-  // Check if there's a saved jobId or loading state in localStorage on initial load
   const savedJobId = localStorage.getItem('jobId');
   const savedIsLoading = localStorage.getItem('isLoading') === 'true';
   const user = localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user")) : null;
@@ -106,7 +105,6 @@ const DashboardForm = () => {
       fileInputRef.current.value = "";
     }
 
-    // Clear jobId and isLoading from localStorage after form reset
     localStorage.removeItem('jobId');
     localStorage.removeItem('isLoading');
   };
@@ -164,11 +162,14 @@ const DashboardForm = () => {
         const lowerCol = col.toLowerCase();
         return !lowerCol.includes('date') && !lowerCol.includes('time') && !lowerCol.includes('geo') && !lowerCol.includes('impression') && !lowerCol.includes('spend');
       }),
+      kpi: headers.filter(col => {
+        const lowerCol = col.toLowerCase();
+        return !lowerCol.includes('date') && !lowerCol.includes('time') && !lowerCol.includes('geo') && !lowerCol.includes('impression') && !lowerCol.includes('spend');
+      }),
       population: headers.filter(col => !col.toLowerCase().includes('date') && !col.toLowerCase().includes('time')),
-      kpi: headers.filter(col => !col.toLowerCase().includes('date') && !col.toLowerCase().includes('time')),
       revenuePerKpi: headers.filter(col => !col.toLowerCase().includes('date') && !col.toLowerCase().includes('time')),
-      media: headers.filter(col => !col.toLowerCase().includes('date') && !col.toLowerCase().includes('time')),
-      mediaSpend: headers.filter(col => !col.toLowerCase().includes('date') && !col.toLowerCase().includes('time')),
+      media: headers.filter(col => col.toLowerCase().includes('spend') || col.toLowerCase().includes('impression')),
+      mediaSpend: headers.filter(col => col.toLowerCase().includes('spend')),
     };
 
     setDropdownOptions(options);
@@ -205,8 +206,8 @@ const DashboardForm = () => {
       
       if (response.ok) {
         setJobId(data.result.job_id);
-        localStorage.setItem('jobId', data.result.job_id);  // Save jobId in localStorage
-        localStorage.setItem('isLoading', 'true'); // Mark loading state
+        localStorage.setItem('jobId', data.result.job_id);
+        localStorage.setItem('isLoading', 'true');
       } else {
         throw new Error(data.message || "Submission failed");
       }
@@ -218,9 +219,9 @@ const DashboardForm = () => {
 
   useEffect(() => {
     if (isLoading) {
-      localStorage.setItem('isLoading', 'true');  // Save isLoading state
+      localStorage.setItem('isLoading', 'true');
     } else {
-      localStorage.removeItem('isLoading');  // Remove isLoading from localStorage when not loading
+      localStorage.removeItem('isLoading');
     }
   }, [isLoading]);
 
@@ -273,7 +274,7 @@ const DashboardForm = () => {
               {["controls", "population", "media"].map((field) => (
                 <Box key={field} className="form-group">
                   <label>
-                    {field.charAt(0).toUpperCase() + field.slice(1)}
+                    {field === "controls" ? "Control Variable" : field.charAt(0).toUpperCase() + field.slice(1)}
                     {field !== "population" && <span className="required">*</span>}
                   </label>
                   <Select
@@ -306,7 +307,7 @@ const DashboardForm = () => {
               {["time", "geo", "kpi", "revenuePerKpi", "mediaSpend"].map((field) => (
                 <Box key={field} className="form-group">
                   <label>
-                    {field.charAt(0).toUpperCase() + field.slice(1)}
+                    {field === "time" ? "Date" : field.charAt(0).toUpperCase() + field.slice(1)}
                     <span className="required">*</span>
                   </label>
                   <Select

@@ -1,4 +1,5 @@
 import os
+import io
 from google.cloud import aiplatform, storage
 from datetime import datetime
 import logging
@@ -88,9 +89,9 @@ class ModelTrainingService:
                     "--data_path", self.gcs_path ,
                     "--result_dir", self.timestamp_folder,
                     "--output_path", "mmm/output",
-                    "--time", ",".join(training_params.get('time')),
+                    "--time", ",".join(training_params.get('date')),
                     "--geo", ",".join(training_params.get('geo')),
-                    "--controls", ",".join(training_params.get('controls', [])),
+                    "--controls", ",".join(training_params.get('control_variable', [])),
                     "--population", ",".join(training_params.get('population', [])),
                     "--kpi", ",".join(training_params.get('kpi', [])),
                     "--revenue_per_kpi", ",".join(training_params.get('revenuePerKpi', [])),
@@ -189,7 +190,7 @@ def get_projects_for_user(user_email):
         # Format the project data for the response
         projects_data = [
             {
-                'job_id': project.job_id,
+                'project_id': project.id,
                 'name': project.name,
                 'gcs_path': project.gcs_path,
                 'status': str(project.status),
@@ -227,31 +228,24 @@ def create_and_upload_eda(data_file_path, timestamp_folder):
         logging.exception("Message")
 
 
-def store_or_update_user_and_project(user_email, project_name, timestamp_folder, job_id, status="PENDING"):
+def store_or_update_user_and_project(user_email, project_name, timestamp_folder, data_file_name, status="PENDING"):
     user = get_or_create_user(user_email)
-    project = Project.query.get(job_id)
-    
-    if not project:
-        project = Project(
-            job_id=job_id,
-            name=project_name,
-            gcs_path=timestamp_folder,
-            user_id=user.id,
-            status=status
-        )
-        db.session.add(project)
-    else:
-        project.name = project_name
-        project.gcs_path = timestamp_folder
-        project.status = status
-    
+
+    project = Project(
+        name=project_name,
+        source_file_name=data_file_name,
+        gcs_path=timestamp_folder,
+        user_id=user.id,
+        status=status
+    )
+    db.session.add(project)
     db.session.commit()
-    return project
+    return project.id
 
 
 def update_job_status(state, job_id):
     # Retrieve the project using the job_id
-    project = Project.query.get(job_id)
+    project = Project.query.filter_by(job_id=job_id).first()
 
     new_status = None
     if state == "JOB_STATE_SUCCEEDED":
@@ -266,16 +260,14 @@ def update_job_status(state, job_id):
         print(f"Updated project {job_id} status to {new_status}.")
 
 
-def get_report_from_gcs(job_id, user_email, gcs_file_name):
+def get_report_from_gcs(project_id, user_email, gcs_file_name):
     try:
         user = User.query.filter_by(email=user_email).first()
         if not user:
             return {'error': 'User not found'}, 404
-
-        project = Project.query.filter_by(job_id=job_id, user_id=user.id).first()
+        project = Project.query.filter_by(id=project_id, user_id=user.id).first()
         if not project:
             return {'error': 'Project not found for this user'}, 404
-
         gcs_path = project.gcs_path
         file_path_in_gcs = os.path.join(gcs_path, gcs_file_name)
 
@@ -407,9 +399,9 @@ def generate_pdf_summary(input_file_path, summary_file_path):
             pass
 
 
-def get_summary_files(job_id, user_email, gcs_file_name):
+def get_summary_files(project_id, user_email, gcs_file_name):
     try:
-        result, status = get_report_from_gcs(job_id, user_email, gcs_file_name)
+        result, status = get_report_from_gcs(project_id, user_email, gcs_file_name)
 
         # If there was an error, return it
         if 'error' in result:
@@ -422,7 +414,7 @@ def get_summary_files(job_id, user_email, gcs_file_name):
             if not user:
                 return {'error': 'User not found'}, 404
             
-            project = Project.query.filter_by(job_id=job_id, user_id=user.id).first()
+            project = Project.query.filter_by(id=project_id, user_id=user.id).first()
             if not project:
                 return {'error': 'Project not found for this user'}, 404
 
@@ -432,8 +424,65 @@ def get_summary_files(job_id, user_email, gcs_file_name):
 
             generate_pdf_summary(input_file_path, summary_file_path)
             time.sleep(10)
-            result, status = get_report_from_gcs(job_id, user_email, gcs_file_name)
+            result, status = get_report_from_gcs(project_id, user_email, gcs_file_name)
         return result, status
     except:
         import logging
         logging.exception("Message")
+
+
+def get_csv_from_gcs(user_email, project_id):
+    """
+    Fetch CSV file from Google Cloud Storage
+    """
+    try:
+        
+        # Extract bucket and blob names from gcs_path
+        user = User.query.filter_by(email=user_email).first()
+        if not user:
+            return {'error': 'User not found'}, 404
+
+        project = Project.query.filter_by(id=project_id, user_id=user.id).first()
+        if not project:
+            return {'error': 'Project not found for this user'}, 404
+
+        timestamp_folder = project.gcs_path
+        filename = project.source_file_name
+        source_file_path = f"{timestamp_folder}/{filename}"
+        
+        bucket = client.get_bucket(BUCKET_NAME)
+        blob = bucket.blob(source_file_path)
+        
+        # Download as string
+        content = blob.download_as_string()
+        # Read CSV content
+        df = pd.read_csv(io.StringIO(content.decode('utf-8')))
+        return df.columns.tolist()
+    except Exception as e:
+        raise Exception(f"Error reading CSV from GCS: {str(e)}")
+
+
+def is_project_already_exist(user_email, project_name):
+    user = User.query.filter_by(email=user_email).first()
+    if not user:
+        return False
+
+    project = Project.query.filter_by(name=project_name, user_id=user.id).first()
+    if not project:
+        return False
+    
+    # Look for existing versions with similar names
+    latest_version = Project.query.filter(
+            Project.user_id == user.id,
+            Project.name.like(f"{project_name}_version_%")
+        ).order_by(Project.name.desc()).first()
+    
+    if latest_version is None:
+        return 1
+        
+    try:
+        # Extract version number from the latest version
+        current_version = int(latest_version.name.split('_version_')[-1])
+        return current_version + 1
+    except (ValueError, IndexError):
+        return 1

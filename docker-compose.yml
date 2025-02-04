@@ -10,20 +10,37 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/backend/config/insightsmix-cda5c2afe3e7.json
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./backend/config/insightsmix-cda5c2afe3e7.json:/app/backend/config/insightsmix-cda5c2afe3e7.json
-    platform: linux/arm64
-    restart: always
+      - ./logs:/app/logs
+      - ./backend:/app/backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    networks:
+      - app-network
+    depends_on:
+      - vertez
 
   frontend:
     build: 
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000
+      - "3000:3000"
     volumes:
-      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
-    platform: linux/arm64
-    restart: always
+      - ./logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    environment:
+      - REACT_APP_API_URL=http://backend:5000
+    depends_on:
+      - backend
+    networks:
+      - app-network
 
   vertez:
     build:
@@ -33,5 +50,13 @@ services:
         - GITHUB_TOKEN=${GITHUB_TOKEN}
     environment:
       - GITHUB_TOKEN=${GITHUB_TOKEN}
-    platform: linux/arm64
-    restart: always
+      - ./logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+networks:
+  app-network:
+    driver: bridge

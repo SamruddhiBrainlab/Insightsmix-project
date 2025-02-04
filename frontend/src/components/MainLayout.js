@@ -1,19 +1,20 @@
-import React from "react";
+import React, { useState } from "react";
 import { Routes, Route } from "react-router-dom";
-import DashboardForm from "./DashboardForm/DashboardForm";
 import ProjectSelection from "./ProjectSelection";
-import EDAReport from "./EDAReport";
 import ModelSummary from "./ModelSummary";
 import MSOOptimization from "./MSOOptimization";
 import GenAISummary from "./GenAISummary";
+import UserGuide from "./UserGuide";
+import InsightsFlow from "./DashboardForm/InsightsFlow";
+import ModelTrainingForm from "./DashboardForm/ModelTrainingForm";
 
 const MainLayout = ({ selectedTab, selectedProject, onProjectSelect }) => {
-  const showProjectSelection = selectedTab !== "Insights";
+  const showProjectSelection = (selectedTab !== "User Guide" && selectedTab !== "MMM Model Training");
   const compactView = !!selectedProject;
+  const [initialData, setInitialData] = useState(null);
 
   return (
-    <main style={{ flex: 1, padding: "24px", marginTop: "60px", marginLeft: "240px", backgroundColor: "#fcf8ef" }}>
-      {/* Always render ProjectSelection (except for Insights) */}
+    <main style={{ flex: 1, padding: "24px", marginLeft: "60px", marginTop: "60px", backgroundColor: "#fcf8ef" }}>
       {showProjectSelection && (
         <ProjectSelection 
           selectedTab={selectedTab} 
@@ -22,18 +23,18 @@ const MainLayout = ({ selectedTab, selectedProject, onProjectSelect }) => {
           compactView={compactView}
         />
       )}
-      
-      <Routes>
-        <Route path="/" element={<DashboardForm selectedProject={selectedProject} />} />
 
+      <Routes>
+        <Route path="/insights" element={<InsightsFlow setInitialData={setInitialData} initialData={initialData}/>} />
+        <Route path="/mmm-model-training" element={<ModelTrainingForm initialData={initialData} />} />
         {selectedProject && (
           <>
-            <Route path="/eda-report" element={<EDAReport selectedProject={selectedProject} />} />
             <Route path="/mmm-model-summary" element={<ModelSummary selectedProject={selectedProject} />} />
             <Route path="/mso-optimization-results" element={<MSOOptimization selectedProject={selectedProject} />} />
             <Route path="/gen-ai-explanation" element={<GenAISummary selectedProject={selectedProject} />} />
           </>
         )}
+        <Route path="/user-guide" element={<UserGuide/>} />
       </Routes>
     </main>
   );

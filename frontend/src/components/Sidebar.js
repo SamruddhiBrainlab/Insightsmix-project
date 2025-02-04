@@ -9,10 +9,10 @@ import {
   Box,
   styled 
 } from "@mui/material";
-import { Lightbulb, Cpu, LocateFixed, Dice4, BrainCog, Stethoscope, File } from "lucide-react";
+import { Lightbulb, Cpu, LocateFixed, Dice4, BrainCog, File } from "lucide-react";
 import { ChevronRight, ChevronLeft } from "@mui/icons-material";
 
-const StyledSidebar = styled(Box)(({ theme, open }) => ({
+const StyledSidebar = styled(Box)(({ open }) => ({
   position: "fixed",
   top: "60px",
   left: 0,
@@ -87,15 +87,16 @@ const StyledNavLink = styled(NavLink)({
 });
 
 const navItems = [
-  { icon: <Lightbulb />, path: "/dashboard", label: "Insights", exact: true },
-  { icon: <Cpu />, path: "/dashboard/eda-report", label: "EDA Report" },
+  { icon: <Lightbulb />, path: "/dashboard/insights", label: "Insights", exact: true },
+  { icon: <Cpu />, path: "/dashboard/mmm-model-training", label: "MMM Model Training" },
   { icon: <LocateFixed />, path: "/dashboard/mmm-model-summary", label: "MMM Model Summary" },
   { icon: <Dice4 />, path: "/dashboard/mso-optimization-results", label: "MSO-Optimization Results" },
   { icon: <BrainCog/>, path: "/dashboard/gen-ai-explanation", label: "Gen AI Explanation"},
+  { icon: <File/>, path: "/dashboard/user-guide", label: "User Guide"}
 ];
 
 const Sidebar = ({ onTabClick }) => {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
