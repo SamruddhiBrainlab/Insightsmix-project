@@ -1,5 +1,6 @@
 services:
   backend:
+    image: ${YOUR_REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/backend:${TAG}
     build: 
       context: ./backend
       dockerfile: Dockerfile
@@ -23,6 +24,7 @@ services:
       - vertez
 
   frontend:
+    image: ${YOUR_REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/frontend:${TAG}
     build: 
       context: ./frontend
       dockerfile: Dockerfile
@@ -43,6 +45,7 @@ services:
       - app-network
 
   vertez:
+    image: ${YOUR_REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/vertez:${TAG}
     build:
       context: ./vertez
       dockerfile: Dockerfile

@@ -20,7 +20,9 @@ BUCKET_NAME = os.getenv("BUCKET_NAME")
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in current_app.config['ALLOWED_EXTENSIONS']
 
-logger = logging.getLogger(__name__)
+from config.logging_config import setup_logging
+
+logger = setup_logging()
 
 @api.route('/upload', methods=['POST'])
 def upload_data():
