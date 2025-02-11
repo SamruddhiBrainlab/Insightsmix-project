@@ -21,10 +21,10 @@ class Project(db.Model):
     __tablename__ = 'projects'
 
     id = db.Column(db.Integer, primary_key=True)
-    job_id = db.Column(db.String(100), nullable=True)  # Use job_id as the primary key
+    job_id = db.Column(db.String(100), nullable=True)
     name = db.Column(db.String(100), nullable=False)
     source_file_name = db.Column(db.String(100), nullable=False)
     gcs_path = db.Column(db.String(255), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    status = db.Column(SQLAlchemyEnum(ProjectStatus), nullable=False, default=ProjectStatus.PENDING)  # Enum column for status
+    status = db.Column(SQLAlchemyEnum(ProjectStatus), nullable=False, default=ProjectStatus.PENDING)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

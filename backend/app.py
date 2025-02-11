@@ -19,7 +19,7 @@ if os.getenv('ENV') == 'production':
         f"{os.getenv('GOOGLE_SQL_DATABASE')}?unix_socket=/cloudsql/{os.getenv('GOOGLE_SQL_INSTANCE_CONNECTION_NAME')}"
     )
 else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////app/backend/local_app.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///local_app.db'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = os.getenv('SECRET_KEY', 'your_secret_key')
@@ -38,4 +38,5 @@ with app.app_context():
     db.create_all()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=os.getenv('ENV') != 'production')
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)

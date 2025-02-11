@@ -22,16 +22,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire project
 COPY . .
 
-# Expose port for development
-EXPOSE 5000
+# Expose port for Cloud Run
+EXPOSE 8080
 
-# Use environment arg to switch between dev and prod
-ARG ENV=development
-ENV ENV=${ENV}
+# Set environment variable for Flask
+ENV PORT=8080
+ENV GUNICORN_CMD_ARGS="--bind 0.0.0.0:8080"
 
-# Development run command
-CMD if [ "$ENV" = "production" ]; then \
-    gunicorn --bind 0.0.0.0:5000 app:app; \
-    else \
-    flask run --host=0.0.0.0 --port=5000; \
-    fi
+# Run the application with Gunicorn
+CMD ["gunicorn", "--preload", "--workers=4", "--timeout=300", "--bind", "0.0.0.0:8080", "app:app"]

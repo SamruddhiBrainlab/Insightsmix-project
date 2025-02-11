@@ -5,7 +5,6 @@ from typing import Tuple, Union
 from datetime import datetime
 from flask import Blueprint, Response, request, jsonify, send_file, current_app
 from .services import *
-import logging
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from sqlalchemy import create_engine

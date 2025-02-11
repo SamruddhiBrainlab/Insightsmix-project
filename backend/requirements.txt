@@ -20,3 +20,4 @@ google-cloud-aiplatform==1.76.0
 # Data Profiling and Reporting
 ydata-profiling==4.6.1
 pdfkit==1.0.0
+gunicorn

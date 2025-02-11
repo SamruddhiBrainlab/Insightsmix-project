@@ -13,7 +13,7 @@ import pdfkit
 import vertexai
 import time
 from vertexai.generative_models import GenerativeModel, Part, SafetySetting
-
+from google.auth import default
 from .summary_prompt import summary_prompt
 from dotenv import load_dotenv
 load_dotenv()
@@ -21,8 +21,10 @@ load_dotenv()
 
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 aiplatform.init(project="insightsmix")
+
 # Initialize GCS client
-client = storage.Client()
+credentials, project = default()
+client = storage.Client(credentials=credentials)
 
 
 class GCSUploader:
