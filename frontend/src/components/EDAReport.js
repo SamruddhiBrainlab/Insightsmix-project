@@ -8,7 +8,9 @@ const EDAReport = ({ selectedProject }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [prevSelectedProject, setPrevSelectedProject] = useState(null);
-
+  const backendUrl = process.env.REACT_APP_BACKEND_URL;
+  
+  
   const handleDownload = () => {
     try {
       // Create a Blob containing the HTML content
@@ -96,7 +98,7 @@ const EDAReport = ({ selectedProject }) => {
     setError(null);
     setPrevSelectedProject(selectedProject);
 
-    const url = new URL("/api/get-report", window.location.origin);
+    const url = new URL("/api/get-report", backendUrl);
     url.searchParams.append("project_id", selectedProject);
     url.searchParams.append("filename", "eda_report.html");
     if (user) {

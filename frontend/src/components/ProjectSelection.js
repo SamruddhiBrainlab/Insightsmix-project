@@ -7,6 +7,7 @@ const ProjectSelection = ({ selectedTab, onProjectSelect, selectedProject, compa
   const [error, setError] = useState(null);
 
   const user = localStorage.getItem("user");
+  const backendUrl = process.env.REACT_APP_BACKEND_URL;
   const userEmail = user ? JSON.parse(user).email : null;
 
   useEffect(() => {
@@ -16,7 +17,7 @@ const ProjectSelection = ({ selectedTab, onProjectSelect, selectedProject, compa
       try {
         setLoading(true);
         setError(null);
-        const response = await fetch(`/api/get-user-projects?email=${userEmail}`);
+        const response = await fetch(`${backendUrl}/api/get-user-projects?email=${userEmail}`);
         const data = await response.json();
         
         if (!response.ok) {

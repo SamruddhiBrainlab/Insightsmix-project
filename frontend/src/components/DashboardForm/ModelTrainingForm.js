@@ -11,7 +11,8 @@ const ModelTrainingForm = ({ initialData }) => {
   const [jobId, setJobId] = useState(savedJobId || null);
   const [isJobCompleted, setIsJobCompleted] = useState(false);
   const [columns, setColumns] = useState([]);
-
+  const backendUrl = process.env.REACT_APP_BACKEND_URL;
+  
   const [formData, setFormData] = useState({
     control_variable: [],
     population: [],
@@ -63,7 +64,7 @@ const ModelTrainingForm = ({ initialData }) => {
       setError(null);
 
       try {
-        const url = new URL("/api/get-input-options", window.location.origin);
+        const url = new URL("/api/get-input-options", backendUrl);
         url.searchParams.append("project_id", initialData.project_id);
         url.searchParams.append("user_email", user.email);
 
@@ -115,7 +116,7 @@ const ModelTrainingForm = ({ initialData }) => {
 
       try {
         const cropJobId = jobId.split("/").pop();
-        const response = await fetch(`/api/training/status/${cropJobId}`);
+        const response = await fetch(`${backendUrl}/api/training/status/${cropJobId}`);
         const data = await response.json();
 
         if (data.state === 'JOB_STATE_SUCCEEDED') {
@@ -160,7 +161,7 @@ const ModelTrainingForm = ({ initialData }) => {
     };
 
     try {
-      const response = await fetch("/api/submit-form", {
+      const response = await fetch(`${backendUrl}/api/submit-form`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(fullFormData),
