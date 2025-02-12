@@ -250,9 +250,16 @@ const EDAReport = ({ selectedProject }) => {
           maxWidth: '100%',
           overflowX: 'auto',
           overflowY: 'auto',
+          position: 'relative',
           maxHeight: 'calc(100vh - 60px)',
           '& > *': {
             maxWidth: '100%'
+          },
+          '& .navbar-fixed-top': {
+            position: 'static !important'
+          },
+          '& body': {
+            marginTop: '0 !important'
           }
         }}
       />
