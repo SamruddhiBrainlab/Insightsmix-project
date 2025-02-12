@@ -8,7 +8,6 @@ const EDAReport = ({ selectedProject }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [prevSelectedProject, setPrevSelectedProject] = useState(null);
-  const backendUrl = process.env.REACT_APP_BACKEND_URL;
   
   
   const handleDownload = () => {
@@ -98,7 +97,7 @@ const EDAReport = ({ selectedProject }) => {
     setError(null);
     setPrevSelectedProject(selectedProject);
 
-    const url = new URL("/api/get-report", backendUrl);
+    const url = new URL("/api/get-report", window.location.origin);
     url.searchParams.append("project_id", selectedProject);
     url.searchParams.append("filename", "eda_report.html");
     if (user) {
@@ -108,6 +107,9 @@ const EDAReport = ({ selectedProject }) => {
     fetch(url)
       .then((response) => {
         if (!response.ok) {
+          localStorage.removeItem('insightsFlow_showEDA');
+          localStorage.removeItem('insightsFlow_initialData');
+          setPrevSelectedProject(null)
           throw new Error(`Failed to fetch the EDA report for project ${selectedProject}`);
         }
         return response.text();
@@ -250,9 +252,18 @@ const EDAReport = ({ selectedProject }) => {
           maxWidth: '100%',
           overflowX: 'auto',
           overflowY: 'auto',
+          position: 'relative',
           maxHeight: 'calc(100vh - 60px)',
           '& > *': {
             maxWidth: '100%'
+          },
+          // Add these overrides
+          '& .navbar-fixed-top': {
+            position: 'static !important'
+          },
+          // If you also want to remove the top margin that might be added
+          '& body': {
+            marginTop: '0 !important'
           }
         }}
       />

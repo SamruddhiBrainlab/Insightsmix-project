@@ -47,7 +47,5 @@
       "last 1 safari version"
     ]
   },
-    "config": {
-      "BACKEND_URL": "https://backend-879937724118.us-central1.run.app"
-    }
+  "proxy": "http://backend:8080"
 }
