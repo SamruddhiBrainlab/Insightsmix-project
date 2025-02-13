@@ -38,7 +38,7 @@ services:
         max-size: "100m"
         max-file: "5"
     environment:
-      - REACT_APP_API_URL=http://backend:8080
+      - REACT_APP_BACKEND_URL=http://localhost:8080
     depends_on:
       - backend
     networks:
