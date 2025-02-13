@@ -173,6 +173,8 @@ const InsightsInitialForm = ({ onEDAComplete }) => {
         console.log(generateData, "-------------", onEDAComplete)
         if (generateData) {
           onEDAComplete(generateData);
+          localStorage.setItem('insightsFlow_showEDA', JSON.stringify(generateData));
+          localStorage.setItem('insightsFlow_initialData', JSON.stringify(true));
         }
       } catch (err) {
         setError(err.message);

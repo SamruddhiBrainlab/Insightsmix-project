@@ -108,6 +108,10 @@ const EDAReport = ({ selectedProject }) => {
     fetch(url)
       .then((response) => {
         if (!response.ok) {
+          localStorage.removeItem('insightsFlow_showEDA');
+          localStorage.removeItem('insightsFlow_initialData');
+          // setPrevSelectedProject(null)
+          setIsLoading(false);
           throw new Error(`Failed to fetch the EDA report for project ${selectedProject}`);
         }
         return response.text();
@@ -117,6 +121,9 @@ const EDAReport = ({ selectedProject }) => {
         setIsLoading(false);
       })
       .catch((error) => {
+        localStorage.removeItem('insightsFlow_showEDA');
+        localStorage.removeItem('insightsFlow_initialData');
+        // setPrevSelectedProject(null)
         console.error("Error fetching EDA report:", error);
         setError(error.message);
         setIsLoading(false);
