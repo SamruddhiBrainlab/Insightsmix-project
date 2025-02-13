@@ -25,7 +25,7 @@ const MainLayout = ({ selectedTab, selectedProject, onProjectSelect }) => {
       )}
 
       <Routes>
-        <Route path="/insights" element={<InsightsFlow setInitialData={setInitialData} initialData={initialData}/>} />
+        <Route path="/insights/*" element={<InsightsFlow setInitialData={setInitialData} initialData={initialData}/>} />
         <Route path="/mmm-model-training" element={<ModelTrainingForm initialData={initialData} />} />
         {selectedProject && (
           <>

@@ -53,7 +53,6 @@ const InsightsInitialForm = ({ onEDAComplete }) => {
     const [dataSourceType, setDataSourceType] = useState("csv_file");
     const [dataSourceDialog, setDataSourceDialog] = useState(false);
     const [dbConnectionDialog, setDbConnectionDialog] = useState(false);
-    const backendUrl = process.env.REACT_APP_BACKEND_URL;
 
     const handleFileChange = async (event) => {
       const file = event.target.files[0];
@@ -81,7 +80,7 @@ const InsightsInitialForm = ({ onEDAComplete }) => {
       formDataToSend.append("data_source", dataSourceType);
   
       try {
-        const response = await fetch(`${backendUrl}/api/upload`, {
+        const response = await fetch(`/api/upload`, {
           method: "POST",
           body: formDataToSend
         });
@@ -111,7 +110,7 @@ const InsightsInitialForm = ({ onEDAComplete }) => {
       formDataToSend.append("table_name", formData.databaseConfig.tableName);
   
       try {
-        const response = await fetch(`${backendUrl}/api/upload`, {
+        const response = await fetch(`/api/upload`, {
           method: "POST",
           body: formDataToSend
         });
@@ -159,7 +158,7 @@ const InsightsInitialForm = ({ onEDAComplete }) => {
 
       try {
         // First, generate the EDA report
-        const generateResponse = await fetch(`${backendUrl}/api/generate-eda-report`, {
+        const generateResponse = await fetch(`/api/generate-eda-report`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(fullFormData),

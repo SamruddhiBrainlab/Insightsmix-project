@@ -8,7 +8,6 @@ const MSOOptimization = ({ selectedProject }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [prevSelectedProject, setPrevSelectedProject] = useState(null);
-  const backendUrl = process.env.REACT_APP_BACKEND_URL;
 
 
   // Function to load scripts sequentially
@@ -77,7 +76,7 @@ const MSOOptimization = ({ selectedProject }) => {
     setError(null);
     setPrevSelectedProject(selectedProject);
 
-    const url = new URL("/api/get-report", backendUrl);
+    const url = new URL("/api/get-report", window.location.origin);
     url.searchParams.append("project_id", selectedProject);
     url.searchParams.append("filename", "optimization_output.html");
     if (user) {

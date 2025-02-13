@@ -18,7 +18,7 @@ const DashboardForm = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [filePath, setFilePath] = useState("");
   const [error, setError] = useState("");
-  const backendUrl = process.env.REACT_APP_BACKEND_URL;
+
   const [formData, setFormData] = useState({
     dataSource: "",
     projectName: "",
@@ -52,7 +52,7 @@ const DashboardForm = () => {
 
       try {
         const cropJobId = jobId.split("/").pop();
-        const response = await fetch(`${backendUrl}/api/training/status/${cropJobId}`);
+        const response = await fetch(`/api/training/status/${cropJobId}`);
         const data = await response.json();
 
         if (data.state === 'JOB_STATE_SUCCEEDED') {
@@ -128,7 +128,7 @@ const DashboardForm = () => {
     formData.append("file", file);
 
     try {
-      const uploadResponse = await axios.post(`${backendUrl}/api/upload`, formData, {
+      const uploadResponse = await axios.post(`/api/upload`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
@@ -198,7 +198,7 @@ const DashboardForm = () => {
     };
 
     try {
-      const response = await fetch(`${backendUrl}/api/submit-form`, {
+      const response = await fetch(`/api/submit-form`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(fullFormData),
