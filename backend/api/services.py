@@ -12,6 +12,7 @@ import base64
 import pdfkit
 import vertexai
 import time
+import gzip
 from vertexai.generative_models import GenerativeModel, Part, SafetySetting
 from google.auth import default
 from .summary_prompt import summary_prompt
@@ -231,18 +232,45 @@ def create_and_upload_eda(data_file_path, timestamp_folder):
 
 
 def store_or_update_user_and_project(user_email, project_name, timestamp_folder, data_file_name, status="PENDING"):
-    user = get_or_create_user(user_email)
-
-    project = Project(
-        name=project_name,
-        source_file_name=data_file_name,
-        gcs_path=timestamp_folder,
-        user_id=user.id,
-        status=status
-    )
-    db.session.add(project)
-    db.session.commit()
-    return project.id
+    try:
+        # Get or create user
+        user = get_or_create_user(user_email)
+        print(f"User created/found: {user}")
+        
+        # Create project
+        project = Project(
+            name=project_name,
+            source_file_name=data_file_name,
+            gcs_path=timestamp_folder,
+            user_id=user.id,
+            status=status
+        )
+        
+        # Add to session
+        db.session.add(project)
+        
+        # Flush to get the ID
+        db.session.flush()
+        
+        # Refresh to load the generated ID
+        db.session.refresh(project)
+        
+        # Commit the transaction
+        db.session.commit()
+        
+        print(f"Project created with ID: {project.id}")
+        
+        # Double check the project exists
+        saved_project = Project.query.get(project.id)
+        if not saved_project:
+            raise Exception("Project was not saved successfully")
+            
+        return project.id
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in store_or_update_user_and_project: {str(e)}")
+        raise
 
 
 def update_job_status(state, job_id):
@@ -264,9 +292,15 @@ def update_job_status(state, job_id):
 
 def get_report_from_gcs(project_id, user_email, gcs_file_name):
     try:
+        print("Searching for project_id:", project_id)  # Add this debug line
         user = User.query.filter_by(email=user_email).first()
         if not user:
             return {'error': 'User not found'}, 404
+
+        # Add debug query
+        all_projects = Project.query.filter_by(user_id=user.id).all()
+        print("All projects for user:", [(p.id, p.name) for p in all_projects])
+            
         project = Project.query.filter_by(id=project_id, user_id=user.id).first()
         if not project:
             return {'error': 'Project not found for this user'}, 404
@@ -488,3 +522,68 @@ def is_project_already_exist(user_email, project_name):
         return current_version + 1
     except (ValueError, IndexError):
         return 1
+    
+
+def generate_chunks(blob, file_name, chunk_size=1024*1024):
+    """Generator function to stream and process content in chunks"""
+    offset = 0
+    buffer = ""
+    while True:
+        chunk = blob.download_as_bytes(start=offset, end=offset + chunk_size - 1)
+        if not chunk:
+            break
+            
+        # Decode chunk and add to buffer
+        current_content = chunk.decode('utf-8')
+        buffer += current_content
+        
+        # Process complete lines to avoid cutting HTML/text in middle
+        lines = buffer.split('\n')
+        
+        # Keep the last potentially incomplete line in buffer
+        buffer = lines[-1]
+        complete_lines = lines[:-1]
+        
+        if complete_lines:
+            content = '\n'.join(complete_lines)
+            
+            compressed_chunk = gzip.compress(content.encode('utf-8'))
+            yield compressed_chunk
+            
+        offset += len(chunk)
+    
+    # Process remaining buffer if any
+    if buffer:
+        compressed_chunk = gzip.compress(buffer.encode('utf-8'))
+        yield compressed_chunk
+
+
+def get_eda_report_from_gcs(project_id, user_email, gcs_file_name):
+    try:
+        print("Searching for project_id:", project_id)
+        user = User.query.filter_by(email=user_email).first()
+        if not user:
+            return {'error': 'User not found'}, 404
+
+        all_projects = Project.query.filter_by(user_id=user.id).all()
+        print("All projects for user:", [(p.id, p.name) for p in all_projects])
+            
+        project = Project.query.filter_by(id=project_id, user_id=user.id).first()
+        if not project:
+            return {'error': 'Project not found for this user'}, 404
+
+        gcs_path = project.gcs_path
+        file_path_in_gcs = os.path.join(gcs_path, gcs_file_name)
+
+        bucket = client.bucket(BUCKET_NAME)
+        blob = bucket.blob(file_path_in_gcs)
+
+        if not blob.exists():
+            return {'error': 'File not found in GCS'}, 404
+
+        # Instead of downloading entire content, return blob object for streaming
+        return {"blob": blob, "file_name": gcs_file_name}, 200
+
+    except Exception as e:
+        print(f"Error in get_report_from_gcs: {str(e)}")
+        return {'error': 'Internal server error occurred'}, 500
