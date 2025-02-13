@@ -109,7 +109,8 @@ const EDAReport = ({ selectedProject }) => {
         if (!response.ok) {
           localStorage.removeItem('insightsFlow_showEDA');
           localStorage.removeItem('insightsFlow_initialData');
-          setPrevSelectedProject(null)
+          // setPrevSelectedProject(null)
+          setIsLoading(false);
           throw new Error(`Failed to fetch the EDA report for project ${selectedProject}`);
         }
         return response.text();
@@ -119,6 +120,9 @@ const EDAReport = ({ selectedProject }) => {
         setIsLoading(false);
       })
       .catch((error) => {
+        localStorage.removeItem('insightsFlow_showEDA');
+        localStorage.removeItem('insightsFlow_initialData');
+        // setPrevSelectedProject(null)
         console.error("Error fetching EDA report:", error);
         setError(error.message);
         setIsLoading(false);
@@ -257,11 +261,9 @@ const EDAReport = ({ selectedProject }) => {
           '& > *': {
             maxWidth: '100%'
           },
-          // Add these overrides
           '& .navbar-fixed-top': {
             position: 'static !important'
           },
-          // If you also want to remove the top margin that might be added
           '& body': {
             marginTop: '0 !important'
           }
