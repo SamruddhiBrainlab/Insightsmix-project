@@ -3,12 +3,14 @@ import pandas as pd
 import io
 from typing import Tuple, Union
 from datetime import datetime
-from flask import Blueprint, Response, request, jsonify, send_file, current_app
+from flask import Blueprint, Response, request, jsonify, send_file, current_app, stream_with_context
 from .services import *
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
+
+
 load_dotenv()
 
 # Define a blueprint for API routes
@@ -585,3 +587,56 @@ def get_md_files() -> Union[Response, Tuple[jsonify, int]]:
         return jsonify({
             'error': f'Internal server error: {str(e)}'
         }), 500
+    
+
+@api.route('/get-eda-report', methods=['GET'])
+def get_eda_report():
+    """
+    Retrieve a report from Google Cloud Storage with streaming support.
+    """
+    try:
+        project_id = request.args.get('project_id')
+        user_email = request.args.get('email')
+        gcs_file_name = request.args.get('filename')
+        logger.info(f"Report request - Project: {project_id}, User: {user_email}, File: {gcs_file_name}")
+        
+        if not all([project_id, user_email]):
+            logger.error("Missing required parameters")
+            return jsonify({
+                'error': 'Project ID and email parameters are required'
+            }), 400
+             
+        if not gcs_file_name:
+            logger.warning("No filename provided, will use default")
+
+        try:
+            result, status_code = get_eda_report_from_gcs(project_id, user_email, gcs_file_name)
+            if status_code != 200:
+                logger.error(f"Failed to get report: {result.get('error', 'Unknown error')}")
+                return jsonify(result), status_code
+            
+            logger.info(f"Streaming report for project {project_id}")
+            
+            # Stream the response
+            return Response(
+                stream_with_context(generate_chunks(result['blob'], result['file_name'])),
+                mimetype='text/html',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Content-Type': 'text/html; charset=utf-8',
+                    'Content-Encoding': 'gzip',
+                    'Transfer-Encoding': 'chunked'
+                }
+            )
+            
+        except Exception as e:
+            import logging
+            logging.exception("Message")
+            logger.error(f"Failed to retrieve report from GCS: {str(e)}")
+            return jsonify({
+                'error': f'Failed to retrieve report: {str(e)}'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in get_report: {str(e)}")
+        return jsonify({'error': str(e)}), 500
