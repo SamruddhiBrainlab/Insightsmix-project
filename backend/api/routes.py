@@ -272,7 +272,7 @@ def get_input_options():
        
        try:
            headers = get_csv_from_gcs(user_email, project_id)
-           options = [str(col) for col in headers][1:]
+           options = [str(col) for col in headers if col.strip()]
            
            logger.info(f"Successfully retrieved {len(options)} columns from CSV")
            return jsonify({

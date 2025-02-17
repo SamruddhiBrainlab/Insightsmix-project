@@ -17,6 +17,8 @@ from vertexai.generative_models import GenerativeModel, Part, SafetySetting
 from google.auth import default
 from .summary_prompt import summary_prompt
 from dotenv import load_dotenv
+from google.api_core import exceptions as google_exceptions
+from config.logging_config import setup_logging
 load_dotenv()
 
 
@@ -27,6 +29,7 @@ aiplatform.init(project="insightsmix")
 credentials, project = default()
 client = storage.Client(credentials=credentials)
 
+logger = setup_logging()
 
 class GCSUploader:
     def __init__(self, project_name):
@@ -221,9 +224,17 @@ def upload_html_to_gcs(html_content, destination_blob_name):
 def create_and_upload_eda(data_file_path, timestamp_folder):
     try:
         df = pd.read_csv(data_file_path)
-        profile = ProfileReport(df, title="Pandas Profiling Report", explorative=True)
+        size = os.path.getsize(data_file_path)
+        if size > 10000000:
+            print("Size is greater than 10mb")
+            profile = ProfileReport(
+                df,
+                minimal=True
+            )
+        else:
+            print("Started EDA report generating...")
+            profile = ProfileReport(df, title="Pandas Profiling Report", explorative=True)
         html_content = profile.to_html()
-
         destination_blob_name = f"{timestamp_folder}/eda_report.html"
         upload_html_to_gcs(html_content, destination_blob_name)
     except:
@@ -526,36 +537,63 @@ def is_project_already_exist(user_email, project_name):
 
 def generate_chunks(blob, file_name, chunk_size=1024*1024):
     """Generator function to stream and process content in chunks"""
-    offset = 0
-    buffer = ""
-    while True:
-        chunk = blob.download_as_bytes(start=offset, end=offset + chunk_size - 1)
-        if not chunk:
-            break
+    try:
+        # Get the total size of the blob
+        blob.reload()
+        total_size = blob.size
+        offset = 0
+        buffer = ""
+
+        while offset < total_size:
+            # Calculate the end position for this chunk
+            end = min(offset + chunk_size - 1, total_size - 1)
             
-        # Decode chunk and add to buffer
-        current_content = chunk.decode('utf-8')
-        buffer += current_content
-        
-        # Process complete lines to avoid cutting HTML/text in middle
-        lines = buffer.split('\n')
-        
-        # Keep the last potentially incomplete line in buffer
-        buffer = lines[-1]
-        complete_lines = lines[:-1]
-        
-        if complete_lines:
-            content = '\n'.join(complete_lines)
-            
-            compressed_chunk = gzip.compress(content.encode('utf-8'))
-            yield compressed_chunk
-            
-        offset += len(chunk)
-    
+            try:
+                chunk = blob.download_as_bytes(start=offset, end=end)
+            except google_exceptions.RequestRangeNotSatisfiable:
+                # If we get a range error, try to download the remaining content
+                chunk = blob.download_as_bytes(start=offset)
+                
+            if not chunk:
+                break
+                
+            # Decode chunk and add to buffer
+            try:
+                current_content = chunk.decode('utf-8')
+                buffer += current_content
+                
+                # Process complete lines to avoid cutting HTML/text in middle
+                lines = buffer.split('\n')
+                
+                # Keep the last potentially incomplete line in buffer
+                buffer = lines[-1]
+                complete_lines = lines[:-1]
+                
+                if complete_lines:
+                    content = '\n'.join(complete_lines)
+                    compressed_chunk = gzip.compress(content.encode('utf-8'))
+                    yield compressed_chunk
+                
+                offset += len(chunk)
+                
+            except UnicodeDecodeError as e:
+                logger.error(f"Unicode decode error at offset {offset}: {str(e)}")
+                # Skip this chunk and continue with the next one
+                offset += len(chunk)
+                buffer = ""
+                continue
+                
+    except Exception as e:
+        logger.error(f"Error in generate_chunks: {str(e)}")
+        raise
+
     # Process remaining buffer if any
     if buffer:
-        compressed_chunk = gzip.compress(buffer.encode('utf-8'))
-        yield compressed_chunk
+        try:
+            compressed_chunk = gzip.compress(buffer.encode('utf-8'))
+            yield compressed_chunk
+        except Exception as e:
+            logger.error(f"Error processing final buffer: {str(e)}")
 
 
 def get_eda_report_from_gcs(project_id, user_email, gcs_file_name):

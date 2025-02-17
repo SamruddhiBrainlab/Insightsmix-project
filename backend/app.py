@@ -4,7 +4,10 @@ from flask_cors import CORS
 from flask_migrate import Migrate
 import os
 from api.routes import api
-from api.db import db  # Import db from the new db module
+from api.db import db
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests from React frontend
@@ -15,8 +18,7 @@ app.config['ALLOWED_EXTENSIONS'] = {'csv', 'excel'}
 
 if os.getenv('ENV') == 'production':
     app.config['SQLALCHEMY_DATABASE_URI'] = (
-        f"mysql+pymysql://{os.getenv('GOOGLE_SQL_USER')}:{os.getenv('GOOGLE_SQL_PASSWORD')}@/"
-        f"{os.getenv('GOOGLE_SQL_DATABASE')}?unix_socket=/cloudsql/{os.getenv('GOOGLE_SQL_INSTANCE_CONNECTION_NAME')}"
+        f"mysql+pymysql://{os.getenv('GOOGLE_SQL_USER')}:{os.getenv('GOOGLE_SQL_PASSWORD')}@34.58.12.161:3306/{os.getenv('GOOGLE_SQL_DATABASE')}"
     )
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///local_app.db'
