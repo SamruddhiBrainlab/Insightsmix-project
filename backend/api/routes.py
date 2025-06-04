@@ -481,7 +481,7 @@ def get_report():
 @api.route('/get-user-projects', methods=['GET'])
 def get_user_projects() -> Tuple[jsonify, int]:
     """
-    Retrieve projects associated with a user identified by their email address.
+    Retrieve projects associated with a user's organization identified by their email address.
     
     Returns:
         tuple: A tuple containing:
@@ -499,29 +499,31 @@ def get_user_projects() -> Tuple[jsonify, int]:
             return jsonify({
                 'error': 'Email parameter is required'
             }), 400
-
+        
         user = User.query.filter_by(email=user_email).first()
         if not user:
             logger.info(f"No user found for email: {user_email}")
             return jsonify({
-                'error': 'No projects created yet'
+                'error': 'User not found'
             }), 404
         
-        pending_projects = Project.query.filter_by(user_id=user.id, status="PENDING").all()
+        # Check status for pending projects in the organization
+        pending_projects = Project.query.filter_by(organization=user.organization, status="PENDING").all()
         
         for project in pending_projects:
             logger.debug(f"Checking status for pending project: {project.job_id}")
             get_training_status(project.job_id)
         
-        projects_data, error = get_projects_for_user(user_email)
+        # Use the organization-based method instead of user-specific method
+        projects_data, error = get_projects_for_organization(user.organization)
         
         if error:
-            logger.error(f"Error retrieving projects for user {user_email}: {error}")
+            logger.error(f"Error retrieving projects for organization {user.organization}: {error}")
             return jsonify({
                 'error': error
             }), 404
 
-        logger.info(f"Successfully retrieved {len(projects_data)} projects for user {user_email}")
+        logger.info(f"Successfully retrieved {len(projects_data)} projects for organization {user.organization}")
         return jsonify({
             'projects': projects_data
         }), 200

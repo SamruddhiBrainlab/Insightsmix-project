@@ -72,9 +72,14 @@ class ModelTrainingService:
         media = training_params.get("media")
         mediaSpend = training_params.get("mediaSpend")
 
+        channel_names = []
+        for media_name in media:
+            media_name = media_name.lower().replace("_spend", "").replace("_impression", "").replace("spend", "").replace("impression", "")
+            channel_names.append(media_name)
+
         # Correct mapping of media to channel
-        CORRECT_MEDIA_TO_CHANNEL = {media[i]: f"Channel_{i}" for i in range(len(media))}
-        CORRECT_MEDIA_SPEND_TO_CHANNEL = {mediaSpend[i]: f"Channel_{i}" for i in range(len(mediaSpend))}
+        CORRECT_MEDIA_TO_CHANNEL = {media[i]: f"{channel_names[i]}" for i in range(len(media))}
+        CORRECT_MEDIA_SPEND_TO_CHANNEL = {mediaSpend[i]: f"{channel_names[i]}" for i in range(len(mediaSpend))}
 
         # Convert the mappings to JSON string format
         CORRECT_MEDIA_TO_CHANNEL_JSON = str(CORRECT_MEDIA_TO_CHANNEL).replace("'", '"')
@@ -95,12 +100,12 @@ class ModelTrainingService:
                     "--data_path", self.gcs_path ,
                     "--result_dir", self.timestamp_folder,
                     "--output_path", "mmm/output",
-                    "--time", ",".join(training_params.get('date')),
-                    "--geo", ",".join(training_params.get('geo')),
+                    "--time", training_params.get('date'),
+                    "--geo", training_params.get('geo'),
                     "--controls", ",".join(training_params.get('control_variable', [])),
-                    "--population", ",".join(training_params.get('population', [])),
-                    "--kpi", ",".join(training_params.get('kpi', [])),
-                    "--revenue_per_kpi", ",".join(training_params.get('revenuePerKpi', [])),
+                    "--population", training_params.get('population', []),
+                    "--kpi", training_params.get('kpi', []),
+                    "--revenue_per_kpi", training_params.get('revenuePerKpi', []),
                     "--media", ",".join(training_params.get('media', [])),
                     "--media_spend", ",".join(training_params.get('mediaSpend', [])),
                     "--correct_media_to_channel", CORRECT_MEDIA_TO_CHANNEL_JSON,
@@ -161,12 +166,18 @@ class ModelTrainingService:
             logging.error(f"Error getting job status: {str(e)}")
             raise
 
+def get_org_name(email):
+    domain = email.split('@')[1] if '@' in email else 'unknown'
+    return domain 
 
 def get_or_create_user(email):
-    """Retrieve a user by email or create a new one."""
+    """Retrieve a user by email or create a new one, inferring organization from email domain."""
     user = User.query.filter_by(email=email).first()
     if not user:
-        user = User(email=email)
+        # Extract organization from email domain
+        org = get_org_name(email)
+        
+        user = User(email=email, organization=org)
         db.session.add(user)
         db.session.commit()
     return user
@@ -184,32 +195,37 @@ def create_project(user_id, project_name, gcs_path):
     return project
         
 
-def get_projects_for_user(user_email):
-    try:
-        # Retrieve the user by email
-        user = User.query.filter_by(email=user_email).first()
-        if not user:
-            return None, "No projects created yet"
+def get_projects_for_organization(organization):
+    """
+    Get all projects for a specific organization
+    
+    Args:
+        organization (str): The organization name
         
-        # Query projects for the user with status 'Success'
-        projects = Project.query.filter_by(user_id=user.id, status="SUCCESS").all()
-        # Format the project data for the response
-        projects_data = [
-            {
+    Returns:
+        tuple: (projects_data, error)
+    """
+    try:
+        projects = Project.query.filter_by(organization=organization).all()
+        
+        projects_data = []
+        for project in projects:
+            project_dict = {
                 'project_id': project.id,
                 'name': project.name,
                 'gcs_path': project.gcs_path,
-                'status': str(project.status),
+                'user_id': project.user_id,
+                'organization': project.organization,
+                'status': project.status.value,
                 'created_at': project.created_at.isoformat()
             }
-            for project in projects
-        ]
+            projects_data.append(project_dict)
         
         return projects_data, None
-
+        
     except Exception as e:
-        print(f"Error in get_projects_for_user: {str(e)}")
-        return None, "Error retrieving projects"
+        logger.exception(f"Error retrieving projects for organization {organization}: {str(e)}")
+        return None, f"Error retrieving projects: {str(e)}"
 
 
 
@@ -225,8 +241,8 @@ def create_and_upload_eda(data_file_path, timestamp_folder):
     try:
         df = pd.read_csv(data_file_path)
         size = os.path.getsize(data_file_path)
-        if size > 10000000:
-            print("Size is greater than 10mb")
+        if size > 5000000:
+            print("Size is greater than 5mb")
             profile = ProfileReport(
                 df,
                 minimal=True
@@ -254,6 +270,7 @@ def store_or_update_user_and_project(user_email, project_name, timestamp_folder,
             source_file_name=data_file_name,
             gcs_path=timestamp_folder,
             user_id=user.id,
+            organization=user.organization,
             status=status
         )
         
@@ -309,10 +326,11 @@ def get_report_from_gcs(project_id, user_email, gcs_file_name):
             return {'error': 'User not found'}, 404
 
         # Add debug query
-        all_projects = Project.query.filter_by(user_id=user.id).all()
+        all_projects = Project.query.filter_by(organization=user.organization).all()
         print("All projects for user:", [(p.id, p.name) for p in all_projects])
             
-        project = Project.query.filter_by(id=project_id, user_id=user.id).first()
+        print(project_id, user.organization, "------------")
+        project = Project.query.filter_by(id=project_id, organization=user.organization).first()
         if not project:
             return {'error': 'Project not found for this user'}, 404
         gcs_path = project.gcs_path
@@ -461,7 +479,7 @@ def get_summary_files(project_id, user_email, gcs_file_name):
             if not user:
                 return {'error': 'User not found'}, 404
             
-            project = Project.query.filter_by(id=project_id, user_id=user.id).first()
+            project = Project.query.filter_by(id=project_id, organization=user.organization).first()
             if not project:
                 return {'error': 'Project not found for this user'}, 404
 
@@ -514,7 +532,7 @@ def is_project_already_exist(user_email, project_name):
     if not user:
         return False
 
-    project = Project.query.filter_by(name=project_name, user_id=user.id).first()
+    project = Project.query.filter_by(name=project_name, organization=user.organization).first()
     if not project:
         return False
     

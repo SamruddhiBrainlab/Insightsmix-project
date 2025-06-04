@@ -13,16 +13,65 @@ const ModelTrainingForm = ({ initialData }) => {
   const [columns, setColumns] = useState([]);
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
   
+  // Define which fields should be multi-select
+  const multiSelectFields = ['control_variable', 'media', 'mediaSpend'];
+  
   const [formData, setFormData] = useState({
     control_variable: [],
-    population: [],
-    media: [],
-    date: [],
-    geo: [],
-    kpi: [],
-    revenuePerKpi: [],
-    mediaSpend: [],
+    population: "",
+    mediaSpend: [], // Switched position with media
+    date: "",
+    geo: "",
+    kpi: "",
+    revenuePerKpi: "",
+    media: [], // Switched position with mediaSpend
   });
+
+  // Validation function for media channels matching
+  const validateMediaChannels = () => {
+    const { media, mediaSpend } = formData;
+    
+    if (media.length === 0 && mediaSpend.length === 0) {
+      return { isValid: true, message: "" };
+    }
+    
+    if (media.length !== mediaSpend.length) {
+      return {
+        isValid: false,
+        message: `Media channels count (${media.length}) must match Media Spend channels count (${mediaSpend.length})`
+      };
+    }
+    
+    // Extract channel base names for comparison
+    const getChannelBaseName = (channelName) => {
+      // Remove common suffixes like _clicks, _spend, _impressions, etc.
+      return channelName.replace(/_(clicks|spend|spends|impressions|impression|views|ctr|cpc|cpm|cost)$/i, '');
+    };
+    
+    const mediaBaseNames = media.map(getChannelBaseName).sort();
+    const mediaSpendBaseNames = mediaSpend.map(getChannelBaseName).sort();
+    
+    console.log(mediaBaseNames)
+    console.log(mediaSpendBaseNames)
+    const mismatchedChannels = [];
+    for (let i = 0; i < mediaBaseNames.length; i++) {
+      if (mediaBaseNames[i] !== mediaSpendBaseNames[i]) {
+        mismatchedChannels.push({
+          media: mediaBaseNames[i],
+          spend: mediaSpendBaseNames[i]
+        });
+      }
+    }
+    
+    if (mismatchedChannels.length > 0) {
+      return {
+        isValid: false,
+        message: `Media and Media Spend channels must correspond to the same marketing channels. Mismatched channels detected.`
+      };
+    }
+    
+    return { isValid: true, message: "" };
+  };
 
   const isTimeColumn = (columnName) => {
     const timeKeywords = ['date', 'time'];
@@ -36,22 +85,58 @@ const ModelTrainingForm = ({ initialData }) => {
   };
 
   const getAvailableOptions = (field) => {
-    const selectedInOtherFields = Object.entries(formData)
-      .filter(([key]) => key !== field)
-      .flatMap(([_, value]) => value);
-    
-    let availableColumns = columns.filter(col => !selectedInOtherFields.includes(col));
+    // Special case: For mediaSpend, we want to include options selected in media
+    if (field === 'mediaSpend') {
+      const selectedInOtherFields = Object.entries(formData)
+        .filter(([key]) => key !== field) // Exclude both current field and media
+        .flatMap(([key, value]) => {
+          // Handle both single values and arrays
+          if (Array.isArray(value)) {
+            return value;
+          } else if (value) {
+            return [value];
+          }
+          return [];
+        });
 
-    if (field === 'date') {
-      return availableColumns.filter(col => isTimeColumn(col));
+      let availableColumns = columns
+        .filter(col => !selectedInOtherFields.includes(col))
+        .filter(col => {
+          // Only include columns that contain "spend" (case-insensitive)
+          const colStr = String(col).toLowerCase();
+          return colStr.includes('spend') || colStr.includes('spends') || 
+             colStr.includes('Spend') || colStr.includes('Spends');
+        });
+      
+      // For mediaSpend, don't filter out time or geo columns since media options should be available
+      return availableColumns;
+    } else {
+      // Original logic for other fields
+      const selectedInOtherFields = Object.entries(formData)
+        .filter(([key]) => key !== field)
+        .flatMap(([key, value]) => {
+          // Handle both single values and arrays
+          if (Array.isArray(value)) {
+            return value;
+          } else if (value) {
+            return [value];
+          }
+          return [];
+        });
+      
+      let availableColumns = columns.filter(col => !selectedInOtherFields.includes(col));
+
+      if (field === 'date') {
+        return availableColumns.filter(col => isTimeColumn(col));
+      }
+      if (field === 'geo') {
+        return availableColumns.filter(col => isGeoColumn(col));
+      }
+      
+      return availableColumns.filter(col => 
+        !isTimeColumn(col) && !isGeoColumn(col)
+      );
     }
-    if (field === 'geo') {
-      return availableColumns.filter(col => isGeoColumn(col));
-    }
-    
-    return availableColumns.filter(col => 
-      !isTimeColumn(col) && !isGeoColumn(col)
-    );
   };
 
   useEffect(() => {
@@ -59,24 +144,30 @@ const ModelTrainingForm = ({ initialData }) => {
       if (!user?.email || !initialData?.project_id) {
         return;
       }
-
+  
       setIsFormLoading(true);
       setError(null);
-
+  
       try {
         const url = new URL("/api/get-input-options", backendUrl);
         url.searchParams.append("project_id", initialData.project_id);
         url.searchParams.append("user_email", user.email);
-
+  
         const response = await fetch(url);
-
+  
         if (!response.ok) {
           throw new Error(`Failed to fetch columns for project ${initialData.project_id}`);
         }
         
         const data = await response.json();
+        
         if (data.success) {
-          setColumns(data.options || []); // Assuming API returns array of column names
+          console.log(data.options)
+          // Filter out any options that are empty, null, or undefined
+          const filteredOptions = (data.options || []).filter(option => 
+            option !== null && option !== undefined && option !== "" && option !== "Unnamed: 0"
+          );
+          setColumns(filteredOptions);
         } else {
           throw new Error("Failed to load columns");
         }
@@ -87,20 +178,20 @@ const ModelTrainingForm = ({ initialData }) => {
         setIsFormLoading(false);
       }
     };
-
+  
     fetchColumns();
-  }, []);
+  }, [user?.email, initialData?.project_id, backendUrl]);
 
   const resetForm = () => {
     setFormData({
-      controls: [],
-      population: [],
-      media: [],
-      date: [],
-      geo: [],
-      kpi: [],
-      revenuePerKpi: [],
-      mediaSpend: [],
+      control_variable: [],
+      population: "",
+      mediaSpend: [], // Switched position
+      date: "",
+      geo: "",
+      kpi: "",
+      revenuePerKpi: "",
+      media: [], // Switched position
     });
     setJobId(null);
     setIsJobCompleted(false);
@@ -150,6 +241,14 @@ const ModelTrainingForm = ({ initialData }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate media channels before submission
+    const validation = validateMediaChannels();
+    if (!validation.isValid) {
+      setError(validation.message);
+      return;
+    }
+    
     setIsLoading(true);
     setError("");
 
@@ -190,6 +289,20 @@ const ModelTrainingForm = ({ initialData }) => {
     }
   }, [isLoading]);
 
+  // Real-time validation effect
+  useEffect(() => {
+    const validation = validateMediaChannels();
+    if (!validation.isValid && (formData.media.length > 0 || formData.mediaSpend.length > 0)) {
+      // Only show validation error if user has made selections
+      if (error !== validation.message) {
+        setError(validation.message);
+      }
+    } else if (validation.isValid && error && error.includes('Media')) {
+      // Clear media-related errors when validation passes
+      setError("");
+    }
+  }, [formData.media, formData.mediaSpend]);
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', width: '100%', gap: 3 }}>
@@ -213,32 +326,39 @@ const ModelTrainingForm = ({ initialData }) => {
       <Paper sx={{ p: 3 }}>
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
-            {["date", "geo", "control_variable", "population", "kpi", "revenuePerKpi", "media", "mediaSpend"].map((field) => (
-              <Grid item xs={12} sm={6} key={field}>
-                <Box sx={{ mb: 2 }}>
-                  <label>
-                    {field.charAt(0).toUpperCase() + field.slice(1)}
-                    {field !== "population" && <span style={{ color: 'red' }}>*</span>}
-                  </label>
-                  <Select
-                    name={field}
-                    multiple
-                    value={formData[field] || []}
-                    onChange={(e) => setFormData(prev => ({ ...prev, [field]: e.target.value }))}
-                    fullWidth
-                    size="small"
-                    renderValue={(selected) => selected.join(", ")}
-                  >
-                    {getAvailableOptions(field).map((option) => (
-                      <MenuItem key={option} value={option}>
-                        <Checkbox checked={(formData[field] || []).includes(option)} />
-                        <ListItemText primary={option} />
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </Box>
-              </Grid>
-            ))}
+            {/* Switched the order: mediaSpend comes before media */}
+            {["date", "geo", "control_variable", "population", "kpi", "revenuePerKpi", "mediaSpend", "media"].map((field) => {
+              const isMultiSelect = multiSelectFields.includes(field);
+              
+              return (
+                <Grid item xs={12} sm={6} key={field}>
+                  <Box sx={{ mb: 2 }}>
+                    <label>
+                      {field === 'mediaSpend' ? 'Media Spend' : field.charAt(0).toUpperCase() + field.slice(1)}
+                      {field !== "population" && <span style={{ color: 'red' }}>*</span>}
+                    </label>
+                    <Select
+                      name={field}
+                      multiple={isMultiSelect}
+                      value={formData[field] || (isMultiSelect ? [] : "")}
+                      onChange={(e) => setFormData(prev => ({ ...prev, [field]: e.target.value }))}
+                      fullWidth
+                      size="small"
+                      renderValue={isMultiSelect ? (selected) => selected.join(", ") : undefined}
+                    >
+                      {getAvailableOptions(field).map((option) => (
+                        <MenuItem key={option} value={option}>
+                          {isMultiSelect && (
+                            <Checkbox checked={formData[field]?.includes(option) || false} />
+                          )}
+                          <ListItemText primary={option} />
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Box>
+                </Grid>
+              );
+            })}
           </Grid>
 
           <Button
