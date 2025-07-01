@@ -32,6 +32,23 @@ from meridian.model import prior_distribution
 from meridian.analysis import summarizer
 from meridian.analysis import optimizer
 
+def get_prior_parameter_dict(prior_dist):
+    """Return a dictionary with all prior parameters"""
+    prior_params = {}
+    
+    for attr_name in dir(prior_dist):
+        if not attr_name.startswith('_') and hasattr(prior_dist, attr_name):
+            attr_value = getattr(prior_dist, attr_name)
+            
+            if hasattr(attr_value, 'parameters') and hasattr(attr_value, 'name'):
+                prior_params[attr_name] = {
+                    'distribution_type': type(attr_value).__name__,
+                    'parameters': dict(attr_value.parameters),
+                    'name': attr_value.name
+                }
+    
+    return prior_params
+
 def load_data_from_gcs(bucket_name, data_path):
     """Load CSV data from Google Cloud Storage bucket."""
     try:
@@ -47,51 +64,54 @@ def load_data_from_gcs(bucket_name, data_path):
 def prepare_data_loader(df, time, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, correct_media_to_channel, correct_media_spend_to_channel):
     """Prepare data loader for Meridian model using dynamic column mapping."""
     logger.info("Preparing data loader with dynamic column mapping...")
+    try:
+        # Convert JSON strings to Python dictionaries
+        # media = json.loads(media_json)
+        # media_spend = json.loads(media_spend_json)
 
-    # Convert JSON strings to Python dictionaries
-    # media = json.loads(media_json)
-    # media_spend = json.loads(media_spend_json)
-
-    # Set up CoordToColumns using the column_mapping
-    # coord_to_columns = load.CoordToColumns(
-    #     time=time,
-    #     geo=geo,
-    #     controls=controls.split(','),
-    #     population=population,
-    #     kpi=kpi,
-    #     revenue_per_kpi=revenue_per_kpi,
-    #     media=media.split(','),
-    #     media_spend=media_spend.split(','),
-    # )
-    coord_to_columns = load.CoordToColumns(
-    **{
-        key: value
-        for key, value in {
-            "time": time,
-            "geo": geo,
-            "controls": controls.split(',') if controls else None,
-            "population": population,
-            "kpi": kpi,
-            "revenue_per_kpi": revenue_per_kpi,
-            "media": media.split(',') if media else None,
-            "media_spend": media_spend.split(',') if media_spend else None,
-        }.items()
-        if value not in (None, "", [])
-    }
-)
-
-
-    correct_media_to_channel = json.loads(correct_media_to_channel)
-    correct_media_spend_to_channel = json.loads(correct_media_spend_to_channel)
-    # Create media to channel mappings
-  
-    return load.CsvDataLoader(
-        csv_path="geo_media.csv",
-        kpi_type='non_revenue',
-        coord_to_columns=coord_to_columns,
-        media_to_channel=correct_media_to_channel,
-        media_spend_to_channel=correct_media_spend_to_channel
+        # Set up CoordToColumns using the column_mapping
+        # coord_to_columns = load.CoordToColumns(
+        #     time=time,
+        #     geo=geo,
+        #     controls=controls.split(','),
+        #     population=population,
+        #     kpi=kpi,
+        #     revenue_per_kpi=revenue_per_kpi,
+        #     media=media.split(','),
+        #     media_spend=media_spend.split(','),
+        # )
+        coord_to_columns = load.CoordToColumns(
+        **{
+            key: value
+            for key, value in {
+                "time": time,
+                "geo": geo,
+                "controls": controls.split(',') if controls else None,
+                "population": population,
+                "kpi": kpi,
+                "revenue_per_kpi": revenue_per_kpi,
+                "media": media.split(',') if media else None,
+                "media_spend": media_spend.split(',') if media_spend else None,
+            }.items()
+            if value not in (None, "", [])
+        }
     )
+
+        correct_media_to_channel = json.loads(correct_media_to_channel)
+        correct_media_spend_to_channel = json.loads(correct_media_spend_to_channel)
+        # Create media to channel mappings
+        logger.info(f"correct_media_to_channel: {correct_media_to_channel} ======************")
+        logger.info(f"correct_media_spend_to_channel: {correct_media_spend_to_channel} @@@@@@@@@@@@@@@@@@@")
+        data_loader = load.CsvDataLoader(
+            csv_path="geo_media.csv",
+            kpi_type='non_revenue',
+            coord_to_columns=coord_to_columns,
+            media_to_channel=correct_media_to_channel,
+            media_spend_to_channel=correct_media_spend_to_channel
+        )
+        return data_loader
+    except Exception as e:
+        print("Error in the function prepare_data_loader: ", e)
 
 def train_meridian_model(data_loader, roi_mu=0.2, roi_sigma=0.9, 
                           n_chains=3, n_adapt=200, n_burnin=200, n_keep=500):
@@ -102,6 +122,12 @@ def train_meridian_model(data_loader, roi_mu=0.2, roi_sigma=0.9,
     prior = prior_distribution.PriorDistribution(
         roi_m=tfp.distributions.LogNormal(roi_mu, roi_sigma, name=constants.ROI_M)
     )
+
+    # Store parameters in a dictionary for further use
+    prior_params_dict = get_prior_parameter_dict(prior)
+    logger.info(f"Prior parameters dictionary: {prior_params_dict}")
+
+    logger.info(f"Priors: {prior} ======================")
     model_spec = spec.ModelSpec(prior=prior)
 
     mmm = model.Meridian(input_data=data_loader, model_spec=model_spec)
@@ -145,6 +171,7 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, geo, 
     logger.info(f"Received project_id: {project_id}")
     logger.info(f"Received bucket_name: {bucket_name}")
     logger.info(f"Received data_path: {data_path}")
+    logger.info(f"Received result_dir: {result_dir}")
     logger.info(f"Received output_path: {output_path}")
     # Log the entire column_mapping dictionary
     logger.info(f"time: {time}")
@@ -177,6 +204,7 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, geo, 
 
     # Prepare column mapping
     data_loader = prepare_data_loader(df, time, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, correct_media_to_channel, correct_media_spend_to_channel)
+    logger.info(f"data loader: {data_loader}")
     data_loader = data_loader.load()
 
     # Train model
@@ -204,15 +232,15 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, geo, 
 
         # Upload summary to GCS
         # summary_destination_blob = 'result/model_summary.html'
-        summary_destination_blob = f'result/{os.path.basename(result_dir)}/model_summary.html'
+        summary_destination_blob = f'{result_dir}/model_summary.html'
 
         upload_to_gcs(local_summary_path, bucket_name, summary_destination_blob)
-        summary_destination_blob = 'result/optimization_output.html'
+        
         budget_optimizer = optimizer.BudgetOptimizer(mmm)
         optimization_results = budget_optimizer.optimize()
         local_optimization_output_path = os.path.join( 'optimization_output/')
         # optimization_destination_blob = f'result/{os.path.basename(result_dir)}/'
-        optimization_destination_blob = f'result/{os.path.basename(result_dir)}/optimization_output.html'
+        optimization_destination_blob = f'{result_dir}/optimization_output.html'
         optimization_results.output_optimization_summary('optimization_output.html', local_optimization_output_path)
         upload_to_gcs(local_optimization_output_path+'optimization_output.html', bucket_name, optimization_destination_blob)
 

@@ -144,6 +144,7 @@ def _handle_database_connection():
         return jsonify({'error': str(e)}), 500
 
 
+# Updated generate_eda_report function to handle the validation error
 @api.route('/generate-eda-report', methods=['POST'])
 def generate_eda_report():
     """
@@ -164,20 +165,14 @@ def generate_eda_report():
         # Validate required fields
         required_fields = ['dataSource', 'projectName', 'userEmail']
         if not all(field in request_data for field in required_fields):
-            missing_fields = [field for field in required_fields if field not in request_data]
+            missing_fields = [field for field in required_fields if field not in required_fields]
             logger.error(f"Missing required fields: {missing_fields}")
             return jsonify({"error": f"Missing required fields: {missing_fields}"}), 400
 
         filename = request_data['dataSource']
+        print(filename, "####################")
         project_name = request_data['projectName']
         user_email = request_data['userEmail']
-        
-        # Check for existing project version
-        logger.info(f"Checking for existing project: {project_name} for user: {user_email}")
-        last_project_ver = is_project_already_exist(user_email, project_name)
-        if last_project_ver:
-            project_name = f"{project_name}_version_{last_project_ver}"
-            logger.info(f"Created new version of project: {project_name}")
 
         # Read and validate input file
         filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
@@ -204,7 +199,7 @@ def generate_eda_report():
             logger.error(f"GCS upload failed: {str(e)}")
             return jsonify({"error": f"Failed to upload to GCS: {str(e)}"}), 500
 
-        # Store project details
+        # Store project details (this will now validate for duplicates)
         try:
             project_id = store_or_update_user_and_project(
                 user_email, 
@@ -214,6 +209,10 @@ def generate_eda_report():
                 status="PENDING"
             )
             logger.info(f"Stored project details. Project ID: {project_id}")
+        except ValueError as e:
+            # Handle duplicate project name error specifically
+            logger.error(f"Project validation failed: {str(e)}")
+            return jsonify({"error": str(e)}), 409  # 409 Conflict status code
         except Exception as e:
             logger.error(f"Failed to store project details: {str(e)}")
             return jsonify({"error": f"Database operation failed: {str(e)}"}), 500
@@ -323,6 +322,7 @@ def start_training():
        project_id = training_params['projectId']
        user_email = training_params['userEmail']
        
+       
        logger.info(f"Processing training request for project: {project_id}, user: {user_email}")
 
        # Validate user existence
@@ -338,14 +338,22 @@ def start_training():
                logger.error(f"Project not found for user: {user_email}, project_id: {project_id}")
                return jsonify({'error': 'Project not found for this user'}), 404
 
+           new_project_ver_id = project_id
+           if project.job_id:
+               print("Model already trained creating new version")
+               # New project version
+               project = create_new_version_of_existing_project(project, user)
+               new_project_ver_id = project.id
+
+
            timestamp_folder = project.gcs_path
            filename = project.source_file_name
            source_file_path = f"gs://{BUCKET_NAME}/{timestamp_folder}/{filename}"
            
            logger.info(f"Starting training job for file: {source_file_path}")
-
+           results_timestamp_folder_path = os.path.join(project.gcs_path, project.name)
            # Initialize training service and start job
-           training_service = ModelTrainingService(timestamp_folder, source_file_path)
+           training_service = ModelTrainingService(results_timestamp_folder_path, source_file_path)
            result = training_service.start_training_job(training_params)
            
            # Extract and store job ID
@@ -366,7 +374,8 @@ def start_training():
 
            return jsonify({
                "message": "Training job started successfully",
-               "result": result
+               "result": result,
+               "project_id": new_project_ver_id
            }), 200
 
        except SQLAlchemyError as e:

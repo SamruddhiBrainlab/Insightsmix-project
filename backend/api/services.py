@@ -84,7 +84,8 @@ class ModelTrainingService:
         # Convert the mappings to JSON string format
         CORRECT_MEDIA_TO_CHANNEL_JSON = str(CORRECT_MEDIA_TO_CHANNEL).replace("'", '"')
         CORRECT_MEDIA_SPEND_TO_CHANNEL_JSON = str(CORRECT_MEDIA_SPEND_TO_CHANNEL).replace("'", '"')
-
+        
+        print("timestamp_folder", self.timestamp_folder)
         return [{
             "machine_spec": {
                 "machine_type": "n1-standard-16",
@@ -181,18 +182,6 @@ def get_or_create_user(email):
         db.session.add(user)
         db.session.commit()
     return user
-
-def create_project(user_id, project_name, gcs_path):
-    """Create a new project for a user."""
-    project = Project(
-        name=project_name,
-        gcs_path=gcs_path,
-        user_id=user_id,
-        created_at=datetime.utcnow()
-    )
-    db.session.add(project)
-    db.session.commit()
-    return project
         
 
 def get_projects_for_organization(organization):
@@ -206,7 +195,7 @@ def get_projects_for_organization(organization):
         tuple: (projects_data, error)
     """
     try:
-        projects = Project.query.filter_by(organization=organization).all()
+        projects = Project.query.filter_by(organization=organization, status="SUCCESS").all()
         
         projects_data = []
         for project in projects:
@@ -233,7 +222,7 @@ def upload_html_to_gcs(html_content, destination_blob_name):
     """Uploads an HTML string to the Google Cloud Storage bucket."""
     bucket = client.bucket(BUCKET_NAME)
     blob = bucket.blob(destination_blob_name)
-    blob.upload_from_string(html_content, content_type="text/html")
+    blob.upload_from_string(html_content, content_type="text/html", timeout=300)
     print(f"HTML content uploaded to {destination_blob_name}.")
 
 
@@ -258,47 +247,101 @@ def create_and_upload_eda(data_file_path, timestamp_folder):
         logging.exception("Message")
 
 
-def store_or_update_user_and_project(user_email, project_name, timestamp_folder, data_file_name, status="PENDING"):
+# Updated helper function for storing projects with versioning
+def store_or_update_user_and_project(user_email, project_name, gcs_path, filename, status="PENDING"):
+    """
+    Store or update user and project information with automatic versioning.
+    
+    Args:
+        user_email (str): Email of the user
+        project_name (str): Base name of the project (e.g., "twc")
+        gcs_path (str): GCS path for the project
+        filename (str): Source file name
+        status (str): Project status
+        
+    Returns:
+        int: Project ID of the created/updated project
+        
+    Raises:
+        ValueError: If user organization is not found
+    """
     try:
-        # Get or create user
+       # Get or create user
         user = get_or_create_user(user_email)
         print(f"User created/found: {user}")
         
-        # Create project
-        project = Project(
-            name=project_name,
-            source_file_name=data_file_name,
-            gcs_path=timestamp_folder,
+        # Check if project with same name already exists in the same organization
+        existing_project = Project.query.filter_by(
+            base_name=project_name,
+            organization=user.organization
+        ).first()
+        
+        if existing_project:
+            error_msg = f"Project '{project_name}' already exists in organization '{user.organization}'"
+            print(f"Validation error: {error_msg}")
+            raise ValueError(error_msg)
+        
+        # Get next version number for this project
+        next_version = Project.get_next_version_number(project_name, user.id)
+        
+        # Create timestamp string (format: YYYYMMDD_HHMMSS)
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+        
+        # Create versioned name with timestamp
+        versioned_name = f"{project_name}_version_{next_version}_{timestamp}"
+        
+        # Create new project version
+        new_project = Project(
+            base_name=project_name,
+            name=versioned_name,
+            version=next_version,
+            source_file_name=filename,
+            gcs_path=gcs_path,
             user_id=user.id,
             organization=user.organization,
             status=status
         )
         
-        # Add to session
-        db.session.add(project)
-        
-        # Flush to get the ID
-        db.session.flush()
-        
-        # Refresh to load the generated ID
-        db.session.refresh(project)
-        
-        # Commit the transaction
+        db.session.add(new_project)
         db.session.commit()
         
-        print(f"Project created with ID: {project.id}")
-        
-        # Double check the project exists
-        saved_project = Project.query.get(project.id)
-        if not saved_project:
-            raise Exception("Project was not saved successfully")
-            
-        return project.id
+        return new_project.id
         
     except Exception as e:
         db.session.rollback()
-        print(f"Error in store_or_update_user_and_project: {str(e)}")
-        raise
+        raise e
+    
+def create_new_version_of_existing_project(project, user, status="PENDING"):
+    try:
+        # Get next version number for this project
+        next_version = Project.get_next_version_number(project.base_name, user.id)
+        
+        # Create timestamp string (format: YYYYMMDD_HHMMSS)
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+        
+        # Create versioned name with timestamp
+        versioned_name = f"{project.base_name}_version_{next_version}_{timestamp}"
+        
+        # Create new project version
+        new_project = Project(
+            base_name=project.base_name,
+            name=versioned_name,
+            version=next_version,
+            source_file_name=project.source_file_name,
+            gcs_path=project.gcs_path,
+            user_id=user.id,
+            organization=user.organization,
+            status=status
+        )
+        
+        db.session.add(new_project)
+        db.session.commit()
+        
+        return new_project
+        
+    except Exception as e:
+        db.session.rollback()
+        raise e
 
 
 def update_job_status(state, job_id):
@@ -333,7 +376,7 @@ def get_report_from_gcs(project_id, user_email, gcs_file_name):
         project = Project.query.filter_by(id=project_id, organization=user.organization).first()
         if not project:
             return {'error': 'Project not found for this user'}, 404
-        gcs_path = project.gcs_path
+        gcs_path = os.path.join(project.gcs_path, project.name)
         file_path_in_gcs = os.path.join(gcs_path, gcs_file_name)
 
         bucket = client.bucket(BUCKET_NAME)
@@ -483,7 +526,7 @@ def get_summary_files(project_id, user_email, gcs_file_name):
             if not project:
                 return {'error': 'Project not found for this user'}, 404
 
-            gcs_path = project.gcs_path
+            gcs_path = os.path.join(project.gcs_path, project.name)
             input_file_path = os.path.join(gcs_path, file_name)
             summary_file_path = os.path.join(gcs_path, gcs_file_name) 
 
@@ -526,31 +569,6 @@ def get_csv_from_gcs(user_email, project_id):
     except Exception as e:
         raise Exception(f"Error reading CSV from GCS: {str(e)}")
 
-
-def is_project_already_exist(user_email, project_name):
-    user = User.query.filter_by(email=user_email).first()
-    if not user:
-        return False
-
-    project = Project.query.filter_by(name=project_name, organization=user.organization).first()
-    if not project:
-        return False
-    
-    # Look for existing versions with similar names
-    latest_version = Project.query.filter(
-            Project.user_id == user.id,
-            Project.name.like(f"{project_name}_version_%")
-        ).order_by(Project.name.desc()).first()
-    
-    if latest_version is None:
-        return 1
-        
-    try:
-        # Extract version number from the latest version
-        current_version = int(latest_version.name.split('_version_')[-1])
-        return current_version + 1
-    except (ValueError, IndexError):
-        return 1
     
 
 def generate_chunks(blob, file_name, chunk_size=1024*1024):
@@ -630,7 +648,6 @@ def get_eda_report_from_gcs(project_id, user_email, gcs_file_name):
 
         gcs_path = project.gcs_path
         file_path_in_gcs = os.path.join(gcs_path, gcs_file_name)
-
         bucket = client.bucket(BUCKET_NAME)
         blob = bucket.blob(file_path_in_gcs)
 
