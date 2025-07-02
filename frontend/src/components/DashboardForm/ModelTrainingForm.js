@@ -27,6 +27,34 @@ const ModelTrainingForm = ({ initialData }) => {
     media: [], // Switched position with mediaSpend
   });
 
+  // Function to extract channel names from spend columns
+  const extractChannelNames = (spendColumns) => {
+    return spendColumns.map(spendColumn => {
+      // Remove common spend-related suffixes to get channel name
+      return spendColumn.replace(/_(spend|spends|cost|costs)$/i, '');
+    });
+  };
+
+  // Function to get spend columns
+  const getSpendColumns = () => {
+    return columns.filter(col => {
+      const colStr = String(col).toLowerCase();
+      return colStr.includes('spend') || colStr.includes('spends') || 
+             colStr.includes('cost') || colStr.includes('costs');
+    });
+  };
+
+  // Function to get all channel-related columns (not just extracted names)
+  const getAllChannelOptions = () => {
+    return columns.filter(col => {
+      const colStr = String(col).toLowerCase();
+      // Include columns that contain channel-related keywords
+      return colStr.includes('click') || colStr.includes('impression') || 
+             colStr.includes('reach') || colStr.includes('engagement') ||
+             colStr.includes('spend') || colStr.includes('cost')
+    });
+  };
+
   // Validation function for media channels matching
   const validateMediaChannels = () => {
     const { media, mediaSpend } = formData;
@@ -45,7 +73,7 @@ const ModelTrainingForm = ({ initialData }) => {
     // Extract channel base names for comparison
     const getChannelBaseName = (channelName) => {
       // Remove common suffixes like _clicks, _spend, _impressions, etc.
-      return channelName.replace(/_(clicks|spend|spends|impressions|impression|views|ctr|cpc|cpm|cost)$/i, '');
+      return channelName.replace(/_(clicks|spend|spends|impressions|impression|views|ctr|cpc|cpm|cost|costs)$/i, '');
     };
     
     const mediaBaseNames = media.map(getChannelBaseName).sort();
@@ -85,58 +113,41 @@ const ModelTrainingForm = ({ initialData }) => {
   };
 
   const getAvailableOptions = (field) => {
-    // Special case: For mediaSpend, we want to include options selected in media
-    if (field === 'mediaSpend') {
-      const selectedInOtherFields = Object.entries(formData)
-        .filter(([key]) => key !== field) // Exclude both current field and media
-        .flatMap(([key, value]) => {
-          // Handle both single values and arrays
-          if (Array.isArray(value)) {
-            return value;
-          } else if (value) {
-            return [value];
-          }
-          return [];
-        });
-
-      let availableColumns = columns
-        .filter(col => !selectedInOtherFields.includes(col))
-        .filter(col => {
-          // Only include columns that contain "spend" (case-insensitive)
-          const colStr = String(col).toLowerCase();
-          return colStr.includes('spend') || colStr.includes('spends') || 
-             colStr.includes('Spend') || colStr.includes('Spends');
-        });
-      
-      // For mediaSpend, don't filter out time or geo columns since media options should be available
-      return availableColumns;
-    } else {
-      // Original logic for other fields
-      const selectedInOtherFields = Object.entries(formData)
-        .filter(([key]) => key !== field)
-        .flatMap(([key, value]) => {
-          // Handle both single values and arrays
-          if (Array.isArray(value)) {
-            return value;
-          } else if (value) {
-            return [value];
-          }
-          return [];
-        });
-      
-      let availableColumns = columns.filter(col => !selectedInOtherFields.includes(col));
-
-      if (field === 'date') {
-        return availableColumns.filter(col => isTimeColumn(col));
-      }
-      if (field === 'geo') {
-        return availableColumns.filter(col => isGeoColumn(col));
-      }
-      
-      return availableColumns.filter(col => 
-        !isTimeColumn(col) && !isGeoColumn(col)
-      );
+    // Static logic: For media, show all options that contain channel names
+    if (field === 'media') {
+      return getAllChannelOptions();
     }
+
+    // Static logic: For mediaSpend, always show all spend-related columns
+    if (field === 'mediaSpend') {
+      return getSpendColumns();
+    }
+
+    // Original logic for other fields (with exclusions)
+    const selectedInOtherFields = Object.entries(formData)
+      .filter(([key]) => key !== field)
+      .flatMap(([key, value]) => {
+        // Handle both single values and arrays
+        if (Array.isArray(value)) {
+          return value;
+        } else if (value) {
+          return [value];
+        }
+        return [];
+      });
+    
+    let availableColumns = columns.filter(col => !selectedInOtherFields.includes(col));
+
+    if (field === 'date') {
+      return availableColumns.filter(col => isTimeColumn(col));
+    }
+    if (field === 'geo') {
+      return availableColumns.filter(col => isGeoColumn(col));
+    }
+    
+    return availableColumns.filter(col => 
+      !isTimeColumn(col) && !isGeoColumn(col)
+    );
   };
 
   useEffect(() => {
@@ -167,7 +178,8 @@ const ModelTrainingForm = ({ initialData }) => {
           const filteredOptions = (data.options || []).filter(option => 
             option !== null && option !== undefined && option !== "" && option !== "Unnamed: 0"
           );
-          setColumns(filteredOptions);
+          const sortedOptions = filteredOptions.sort((a, b) => a.localeCompare(b));
+          setColumns(sortedOptions);
         } else {
           throw new Error("Failed to load columns");
         }
