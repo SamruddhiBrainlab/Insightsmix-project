@@ -81,6 +81,8 @@ class ModelTrainingService:
         CORRECT_MEDIA_TO_CHANNEL = {media[i]: f"{channel_names[i]}" for i in range(len(media))}
         CORRECT_MEDIA_SPEND_TO_CHANNEL = {mediaSpend[i]: f"{channel_names[i]}" for i in range(len(mediaSpend))}
 
+        date_range = training_params.get('dateRange')
+        
         # Convert the mappings to JSON string format
         CORRECT_MEDIA_TO_CHANNEL_JSON = str(CORRECT_MEDIA_TO_CHANNEL).replace("'", '"')
         CORRECT_MEDIA_SPEND_TO_CHANNEL_JSON = str(CORRECT_MEDIA_SPEND_TO_CHANNEL).replace("'", '"')
@@ -102,6 +104,8 @@ class ModelTrainingService:
                     "--result_dir", self.timestamp_folder,
                     "--output_path", "mmm/output",
                     "--time", training_params.get('date'),
+                    "--start_date", date_range.get('start_date'),
+                    "--end_date", date_range.get('end_date'),
                     "--geo", training_params.get('geo'),
                     "--controls", ",".join(training_params.get('control_variable', [])),
                     "--population", training_params.get('population', []),
@@ -541,10 +545,9 @@ def get_summary_files(project_id, user_email, gcs_file_name):
 
 def get_csv_from_gcs(user_email, project_id):
     """
-    Fetch CSV file from Google Cloud Storage
+    Fetch CSV file from Google Cloud Storage and return both columns and date ranges
     """
     try:
-        
         # Extract bucket and blob names from gcs_path
         user = User.query.filter_by(email=user_email).first()
         if not user:
@@ -565,9 +568,70 @@ def get_csv_from_gcs(user_email, project_id):
         content = blob.download_as_string()
         # Read CSV content
         df = pd.read_csv(io.StringIO(content.decode('utf-8')))
-        return df.columns.tolist()
+        
+        # Get column names
+        columns = df.columns.tolist()
+        
+        # Extract date ranges for date columns
+        date_ranges = extract_date_ranges(df, columns)
+        
+        return {
+            'columns': columns,
+            'date_ranges': date_ranges
+        }
+        
     except Exception as e:
         raise Exception(f"Error reading CSV from GCS: {str(e)}")
+
+def is_date_column(column_name):
+    """
+    Check if a column name suggests it contains date/time data
+    """
+    date_keywords = ['date', 'time', 'timestamp', 'datetime', 'day', 'month', 'year']
+    column_lower = column_name.lower()
+    return any(keyword in column_lower for keyword in date_keywords)
+
+def extract_date_ranges(df, columns):
+    """
+    Extract min and max dates from date columns in the DataFrame
+    """
+    date_ranges = {}
+    
+    for column in columns:
+        if is_date_column(column):
+            try:
+                # Skip if column has too many null values
+                if df[column].isnull().sum() / len(df) > 0.5:
+                    continue
+                
+                # Try to convert to datetime
+                date_series = pd.to_datetime(df[column], errors='coerce')
+                
+                # Skip if conversion failed for most values
+                if date_series.isnull().sum() / len(date_series) > 0.5:
+                    continue
+                
+                # Get min and max dates
+                min_date = date_series.min()
+                max_date = date_series.max()
+                
+                # Skip if we couldn't get valid dates
+                if pd.isna(min_date) or pd.isna(max_date):
+                    continue
+                
+                # Format dates as strings
+                date_ranges[column] = {
+                    'start_date': min_date.strftime('%Y-%m-%d'),
+                    'end_date': max_date.strftime('%Y-%m-%d')
+                }
+                
+                logger.info(f"Extracted date range for column '{column}': {date_ranges[column]}")
+                
+            except Exception as e:
+                logger.warning(f"Could not extract date range for column '{column}': {str(e)}")
+                continue
+    
+    return date_ranges
 
     
 

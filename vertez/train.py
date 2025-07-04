@@ -118,25 +118,27 @@ def train_meridian_model(data_loader, roi_mu=0.2, roi_sigma=0.9,
     """
     Train Meridian Model with reduced parameters for faster testing
     """
-    logger.info("Initializing model training")
-    prior = prior_distribution.PriorDistribution(
-        roi_m=tfp.distributions.LogNormal(roi_mu, roi_sigma, name=constants.ROI_M)
-    )
+    try:
+        logger.info("Initializing model training")
+        prior = prior_distribution.PriorDistribution(
+            roi_m=tfp.distributions.LogNormal(roi_mu, roi_sigma, name=constants.ROI_M)
+        )
 
-    # Store parameters in a dictionary for further use
-    prior_params_dict = get_prior_parameter_dict(prior)
-    logger.info(f"Prior parameters dictionary: {prior_params_dict}")
+        # Store parameters in a dictionary for further use
+        prior_params_dict = get_prior_parameter_dict(prior)
+        logger.info(f"Prior parameters dictionary: {prior_params_dict}")
 
-    logger.info(f"Priors: {prior} ======================")
-    model_spec = spec.ModelSpec(prior=prior)
+        model_spec = spec.ModelSpec(prior=prior)
 
-    mmm = model.Meridian(input_data=data_loader, model_spec=model_spec)
-    mmm.sample_prior(n_keep)
-    logger.info("Starting model posterior sampling...")
-    mmm.sample_posterior(n_chains=n_chains, n_adapt=n_adapt, n_burnin=n_burnin, n_keep=n_keep)
-    
-    logger.info("Model posterior sampling completed")
-    return mmm
+        mmm = model.Meridian(input_data=data_loader, model_spec=model_spec)
+        mmm.sample_prior(n_keep)
+        logger.info("Starting model posterior sampling...")
+        mmm.sample_posterior(n_chains=n_chains, n_adapt=n_adapt, n_burnin=n_burnin, n_keep=n_keep)
+        
+        logger.info("Model posterior sampling completed")
+        return mmm
+    except Exception as e:
+        logger.info("Reson of error:", e)
 
 
 def upload_to_gcs(local_file_path, bucket_name, destination_blob_name):
@@ -166,7 +168,7 @@ def upload_to_gcs(local_file_path, bucket_name, destination_blob_name):
         raise
 
 
-def main(project_id, bucket_name, data_path, result_dir,output_path, time, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, correct_media_to_channel, correct_media_spend_to_channel):
+def main(project_id, bucket_name, data_path, result_dir,output_path, time, start_date, end_date, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, correct_media_to_channel, correct_media_spend_to_channel):
     # Log the received arguments for debugging
     logger.info(f"Received project_id: {project_id}")
     logger.info(f"Received bucket_name: {bucket_name}")
@@ -175,6 +177,8 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, geo, 
     logger.info(f"Received output_path: {output_path}")
     # Log the entire column_mapping dictionary
     logger.info(f"time: {time}")
+    logger.info(f"Start date: {start_date}")
+    logger.info(f"End date: {end_date}")
     logger.info(f"geo: {geo}")
     
     # Log the 'controls' variable as a list
@@ -225,9 +229,7 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, geo, 
         # Create and save model summary
         logger.info("Generating and saving model summary...")
         mmm_summarizer = summarizer.Summarizer(mmm)
-        local_summary_path = os.path.join( '2021-01-25/model_summary.html')
-        start_date = '2021-01-25'
-        end_date = '2024-01-15'
+        local_summary_path = os.path.join( f'{start_date}/model_summary.html')
         mmm_summarizer.output_model_results_summary('model_summary.html', start_date, end_date)
 
         # Upload summary to GCS
@@ -260,6 +262,8 @@ if __name__ == '__main__':
     
     # New arguments
     parser.add_argument('--time', required=True, help='Time column')
+    parser.add_argument('--start_date', required=True, help='start date of data')
+    parser.add_argument('--end_date', required=True, help='end date of data')
     parser.add_argument('--geo', required=True, help='Geo column')
     parser.add_argument('--controls', required=True, help='Comma-separated list of control variables')
     parser.add_argument('--population', required=True, help='Population column')
@@ -277,7 +281,7 @@ if __name__ == '__main__':
     try:
         main(
             args.project_id, args.bucket_name, args.data_path,args.result_dir, args.output_path, 
-            args.time, args.geo, args.controls, 
+            args.time, args.start_date, args.end_date, args.geo, args.controls, 
             args.population, args.kpi, args.revenue_per_kpi, args.media, 
             args.media_spend, args.correct_media_to_channel, args.correct_media_spend_to_channel
         )

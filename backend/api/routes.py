@@ -246,52 +246,64 @@ def generate_eda_report():
 
 @api.route('/get-input-options')
 def get_input_options():
-   """
-   Retrieve column headers from a CSV file stored in Google Cloud Storage.
-   
-   Query Parameters:
-       project_id: ID of the project
-       user_email: Email of the user requesting the data
-   
-   Returns:
-       tuple: JSON response with column options and HTTP status code
-   """
-   try:
-       project_id = request.args.get('project_id')
-       user_email = request.args.get('user_email')
+    """
+    Retrieve column headers and date ranges from a CSV file stored in Google Cloud Storage.
+    
+    Query Parameters:
+        project_id: ID of the project
+        user_email: Email of the user requesting the data
+    
+    Returns:
+        tuple: JSON response with column options, date ranges, and HTTP status code
+    """
+    try:
+        project_id = request.args.get('project_id')
+        user_email = request.args.get('user_email')
 
-       if not project_id or not user_email:
-           logger.error("Missing required parameters: project_id or user_email")
-           return jsonify({
-               'success': False,
-               'error': 'Missing required parameters: project_id and user_email are required'
-           }), 400
+        if not project_id or not user_email:
+            logger.error("Missing required parameters: project_id or user_email")
+            return jsonify({
+                'success': False,
+                'error': 'Missing required parameters: project_id and user_email are required'
+            }), 400
 
-       logger.info(f"Fetching CSV headers for project_id: {project_id}, user_email: {user_email}")
-       
-       try:
-           headers = get_csv_from_gcs(user_email, project_id)
-           options = [str(col) for col in headers if col.strip()]
-           
-           logger.info(f"Successfully retrieved {len(options)} columns from CSV")
-           return jsonify({
-               'success': True,
-               'options': options
-           })
-           
-       except Exception as e:
-           logger.error(f"Failed to retrieve CSV from GCS: {str(e)}")
-           return jsonify({
-               'success': False,
-               'error': f'Failed to retrieve file data: {str(e)}'
-           }), 500
-           
-   except Exception as e:
-       logger.error(f"Unexpected error in get_input_options: {str(e)}")
-       return jsonify({
-           'success': False,
-           'error': str(e)
-       }), 500
+        logger.info(f"Fetching CSV headers and date ranges for project_id: {project_id}, user_email: {user_email}")
+        
+        try:
+            # Get both columns and date ranges
+            csv_data = get_csv_from_gcs(user_email, project_id)
+            
+            # Handle error case
+            if isinstance(csv_data, tuple) and 'error' in csv_data[0]:
+                return jsonify(csv_data[0]), csv_data[1]
+            
+            columns = csv_data['columns']
+            date_ranges = csv_data['date_ranges']
+            
+            # Filter out empty or invalid column names
+            options = [str(col) for col in columns if col and str(col).strip() and str(col) != 'Unnamed: 0']
+            
+            logger.info(f"Successfully retrieved {len(options)} columns and {len(date_ranges)} date ranges from CSV")
+            
+            return jsonify({
+                'success': True,
+                'options': options,
+                'date_ranges': date_ranges
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve CSV from GCS: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': f'Failed to retrieve file data: {str(e)}'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in get_input_options: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @api.route('/submit-form', methods=['POST'])
 def start_training():

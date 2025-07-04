@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Paper, Grid, Select, MenuItem, Checkbox, ListItemText, Button, Alert, Typography, CircularProgress } from "@mui/material";
+import { Box, Paper, Grid, Select, MenuItem, Checkbox, ListItemText, Button, Alert, Typography, CircularProgress, TextField } from "@mui/material";
 
 const ModelTrainingForm = ({ initialData }) => {
   const user = localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user")) : null;
@@ -11,6 +11,7 @@ const ModelTrainingForm = ({ initialData }) => {
   const [jobId, setJobId] = useState(savedJobId || null);
   const [isJobCompleted, setIsJobCompleted] = useState(false);
   const [columns, setColumns] = useState([]);
+  const [dateRanges, setDateRanges] = useState({}); // Store date ranges for each date column
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
   
   // Define which fields should be multi-select
@@ -21,6 +22,7 @@ const ModelTrainingForm = ({ initialData }) => {
     population: "",
     mediaSpend: [], // Switched position with media
     date: "",
+    dateRange: { start_date: "", end_date: "" }, // Add date range fields
     geo: "",
     kpi: "",
     revenuePerKpi: "",
@@ -101,6 +103,48 @@ const ModelTrainingForm = ({ initialData }) => {
     return { isValid: true, message: "" };
   };
 
+  // Validation function for date ranges
+  const validateDateRange = () => {
+    const { date, dateRange } = formData;
+    
+    if (!date || !dateRange.start_date || !dateRange.end_date) {
+      return { isValid: true, message: "" };
+    }
+    
+    const selectedDateRange = dateRanges[date];
+    if (!selectedDateRange) {
+      return { isValid: true, message: "" };
+    }
+    
+    const userStartDate = new Date(dateRange.start_date);
+    const userEndDate = new Date(dateRange.end_date);
+    const dataStartDate = new Date(selectedDateRange.start_date);
+    const dataEndDate = new Date(selectedDateRange.end_date);
+    
+    if (userStartDate < dataStartDate) {
+      return {
+        isValid: false,
+        message: `Start date cannot be earlier than ${selectedDateRange.start_date}`
+      };
+    }
+    
+    if (userEndDate > dataEndDate) {
+      return {
+        isValid: false,
+        message: `End date cannot be later than ${selectedDateRange.end_date}`
+      };
+    }
+    
+    if (userStartDate > userEndDate) {
+      return {
+        isValid: false,
+        message: `Start date cannot be later than end date`
+      };
+    }
+    
+    return { isValid: true, message: "" };
+  };
+
   const isTimeColumn = (columnName) => {
     const timeKeywords = ['date', 'time'];
     return timeKeywords.some(keyword => 
@@ -125,7 +169,7 @@ const ModelTrainingForm = ({ initialData }) => {
 
     // Original logic for other fields (with exclusions)
     const selectedInOtherFields = Object.entries(formData)
-      .filter(([key]) => key !== field)
+      .filter(([key]) => key !== field && key !== 'dateRange') // Exclude dateRange from comparison
       .flatMap(([key, value]) => {
         // Handle both single values and arrays
         if (Array.isArray(value)) {
@@ -148,6 +192,30 @@ const ModelTrainingForm = ({ initialData }) => {
     return availableColumns.filter(col => 
       !isTimeColumn(col) && !isGeoColumn(col)
     );
+  };
+
+  // Handle date column selection change
+  const handleDateColumnChange = (selectedDateColumn) => {
+    const selectedRange = dateRanges[selectedDateColumn];
+    setFormData(prev => ({
+      ...prev,
+      date: selectedDateColumn,
+      dateRange: selectedRange ? {
+        start_date: selectedRange.start_date,
+        end_date: selectedRange.end_date
+      } : { start_date: "", end_date: "" }
+    }));
+  };
+
+  // Handle date range input changes
+  const handleDateRangeChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      dateRange: {
+        ...prev.dateRange,
+        [field]: value
+      }
+    }));
   };
 
   useEffect(() => {
@@ -180,6 +248,11 @@ const ModelTrainingForm = ({ initialData }) => {
           );
           const sortedOptions = filteredOptions.sort((a, b) => a.localeCompare(b));
           setColumns(sortedOptions);
+          
+          // Extract and set date ranges if they exist in the response
+          if (data.date_ranges) {
+            setDateRanges(data.date_ranges);
+          }
         } else {
           throw new Error("Failed to load columns");
         }
@@ -200,6 +273,7 @@ const ModelTrainingForm = ({ initialData }) => {
       population: "",
       mediaSpend: [], // Switched position
       date: "",
+      dateRange: { start_date: "", end_date: "" },
       geo: "",
       kpi: "",
       revenuePerKpi: "",
@@ -255,9 +329,16 @@ const ModelTrainingForm = ({ initialData }) => {
     e.preventDefault();
     
     // Validate media channels before submission
-    const validation = validateMediaChannels();
-    if (!validation.isValid) {
-      setError(validation.message);
+    const mediaValidation = validateMediaChannels();
+    if (!mediaValidation.isValid) {
+      setError(mediaValidation.message);
+      return;
+    }
+    
+    // Validate date ranges before submission
+    const dateValidation = validateDateRange();
+    if (!dateValidation.isValid) {
+      setError(dateValidation.message);
       return;
     }
     
@@ -301,19 +382,32 @@ const ModelTrainingForm = ({ initialData }) => {
     }
   }, [isLoading]);
 
-  // Real-time validation effect
+  // Real-time validation effect for media channels
   useEffect(() => {
-    const validation = validateMediaChannels();
-    if (!validation.isValid && (formData.media.length > 0 || formData.mediaSpend.length > 0)) {
+    const mediaValidation = validateMediaChannels();
+    if (!mediaValidation.isValid && (formData.media.length > 0 || formData.mediaSpend.length > 0)) {
       // Only show validation error if user has made selections
-      if (error !== validation.message) {
-        setError(validation.message);
+      if (error !== mediaValidation.message) {
+        setError(mediaValidation.message);
       }
-    } else if (validation.isValid && error && error.includes('Media')) {
+    } else if (mediaValidation.isValid && error && error.includes('Media')) {
       // Clear media-related errors when validation passes
       setError("");
     }
   }, [formData.media, formData.mediaSpend]);
+
+  // Real-time validation effect for date ranges
+  useEffect(() => {
+    const dateValidation = validateDateRange();
+    if (!dateValidation.isValid && formData.date && (formData.dateRange.start_date || formData.dateRange.end_date)) {
+      if (error !== dateValidation.message) {
+        setError(dateValidation.message);
+      }
+    } else if (dateValidation.isValid && error && (error.includes('date') || error.includes('Date'))) {
+      // Clear date-related errors when validation passes
+      setError("");
+    }
+  }, [formData.date, formData.dateRange]);
 
   if (isLoading) {
     return (
@@ -333,13 +427,21 @@ const ModelTrainingForm = ({ initialData }) => {
     );
   }
 
+  // Get current date range info for display
+  const getCurrentDateRange = () => {
+    if (formData.date && dateRanges[formData.date]) {
+      return dateRanges[formData.date];
+    }
+    return null;
+  };
+
   return (
     <Box sx={{ width: '800px', margin: '0 auto' }}>
       <Paper sx={{ p: 3 }}>
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
-            {/* Switched the order: mediaSpend comes before media */}
-            {["date", "geo", "control_variable", "population", "kpi", "revenuePerKpi", "mediaSpend", "media"].map((field) => {
+            {/* Regular form fields */}
+            {["control_variable", "population", "kpi", "revenuePerKpi", "mediaSpend", "media", "geo"].map((field) => {
               const isMultiSelect = multiSelectFields.includes(field);
               
               return (
@@ -371,6 +473,72 @@ const ModelTrainingForm = ({ initialData }) => {
                 </Grid>
               );
             })}
+
+            {/* Date Column Selection */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Date Column<span style={{ color: 'red' }}>*</span>
+                </label>
+                <Select
+                  name="date"
+                  value={formData.date || ""}
+                  onChange={(e) => handleDateColumnChange(e.target.value)}
+                  fullWidth
+                  size="small"
+                >
+                  {getAvailableOptions('date').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
+
+            {/* Date Range Fields */}
+            {formData.date && getCurrentDateRange() && (
+              <>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 2 }}>
+                    <label>
+                      Start Date<span style={{ color: 'red' }}>*</span>
+                    </label>
+                    <TextField
+                      type="date"
+                      value={formData.dateRange.start_date}
+                      onChange={(e) => handleDateRangeChange('start_date', e.target.value)}
+                      fullWidth
+                      size="small"
+                      inputProps={{
+                        min: getCurrentDateRange().start_date,
+                        max: getCurrentDateRange().end_date,
+                      }}
+                      helperText={`Available range: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
+                    />
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 2 }}>
+                    <label>
+                      End Date<span style={{ color: 'red' }}>*</span>
+                    </label>
+                    <TextField
+                      type="date"
+                      value={formData.dateRange.end_date}
+                      onChange={(e) => handleDateRangeChange('end_date', e.target.value)}
+                      fullWidth
+                      size="small"
+                      inputProps={{
+                        min: getCurrentDateRange().start_date,
+                        max: getCurrentDateRange().end_date,
+                      }}
+                      helperText={`Available range: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
+                    />
+                  </Box>
+                </Grid>
+              </>
+            )}
           </Grid>
 
           <Button
