@@ -523,10 +523,7 @@ def get_user_projects() -> Tuple[jsonify, int]:
         
         user = User.query.filter_by(email=user_email).first()
         if not user:
-            logger.info(f"No user found for email: {user_email}")
-            return jsonify({
-                'error': 'User not found'
-            }), 404
+            user = get_or_create_user(user_email)
         
         # Check status for pending projects in the organization
         pending_projects = Project.query.filter_by(organization=user.organization, status="PENDING").all()

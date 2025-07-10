@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Paper, Grid, Select, MenuItem, Checkbox, ListItemText, Button, Alert, Typography, CircularProgress, TextField } from "@mui/material";
+import { Box, Paper, Grid, Select, MenuItem, Checkbox, ListItemText, Button, Alert, Typography, CircularProgress, TextField, Link } from "@mui/material";
 
 const ModelTrainingForm = ({ initialData }) => {
   const user = localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user")) : null;
@@ -440,41 +440,29 @@ const ModelTrainingForm = ({ initialData }) => {
       <Paper sx={{ p: 3 }}>
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
-            {/* Regular form fields */}
-            {["control_variable", "population", "kpi", "revenuePerKpi", "mediaSpend", "media", "geo"].map((field) => {
-              const isMultiSelect = multiSelectFields.includes(field);
-              
-              return (
-                <Grid item xs={12} sm={6} key={field}>
-                  <Box sx={{ mb: 2 }}>
-                    <label>
-                      {field === 'mediaSpend' ? 'Media Spend' : field.charAt(0).toUpperCase() + field.slice(1)}
-                      {field !== "population" && <span style={{ color: 'red' }}>*</span>}
-                    </label>
-                    <Select
-                      name={field}
-                      multiple={isMultiSelect}
-                      value={formData[field] || (isMultiSelect ? [] : "")}
-                      onChange={(e) => setFormData(prev => ({ ...prev, [field]: e.target.value }))}
-                      fullWidth
-                      size="small"
-                      renderValue={isMultiSelect ? (selected) => selected.join(", ") : undefined}
-                    >
-                      {getAvailableOptions(field).map((option) => (
-                        <MenuItem key={option} value={option}>
-                          {isMultiSelect && (
-                            <Checkbox checked={formData[field]?.includes(option) || false} />
-                          )}
-                          <ListItemText primary={option} />
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </Box>
-                </Grid>
-              );
-            })}
+            {/* 1. Geo */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Geo<span style={{ color: 'red' }}>*</span>
+                </label>
+                <Select
+                  name="geo"
+                  value={formData.geo || ""}
+                  onChange={(e) => setFormData(prev => ({ ...prev, geo: e.target.value }))}
+                  fullWidth
+                  size="small"
+                >
+                  {getAvailableOptions('geo').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
 
-            {/* Date Column Selection */}
+            {/* Date Column Selection (needed for date range fields) */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
@@ -496,49 +484,192 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* Date Range Fields */}
+            {/* 2. Start Date */}
             {formData.date && getCurrentDateRange() && (
-              <>
-                <Grid item xs={12} sm={6}>
-                  <Box sx={{ mb: 2 }}>
-                    <label>
-                      Start Date<span style={{ color: 'red' }}>*</span>
-                    </label>
-                    <TextField
-                      type="date"
-                      value={formData.dateRange.start_date}
-                      onChange={(e) => handleDateRangeChange('start_date', e.target.value)}
-                      fullWidth
-                      size="small"
-                      inputProps={{
-                        min: getCurrentDateRange().start_date,
-                        max: getCurrentDateRange().end_date,
-                      }}
-                      helperText={`Available range: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
-                    />
-                  </Box>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Box sx={{ mb: 2 }}>
-                    <label>
-                      End Date<span style={{ color: 'red' }}>*</span>
-                    </label>
-                    <TextField
-                      type="date"
-                      value={formData.dateRange.end_date}
-                      onChange={(e) => handleDateRangeChange('end_date', e.target.value)}
-                      fullWidth
-                      size="small"
-                      inputProps={{
-                        min: getCurrentDateRange().start_date,
-                        max: getCurrentDateRange().end_date,
-                      }}
-                      helperText={`Available range: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
-                    />
-                  </Box>
-                </Grid>
-              </>
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ mb: 2 }}>
+                  <label>
+                    Start Date<span style={{ color: 'red' }}>*</span>
+                  </label>
+                  <TextField
+                    type="date"
+                    value={formData.dateRange.start_date}
+                    onChange={(e) => handleDateRangeChange('start_date', e.target.value)}
+                    fullWidth
+                    size="small"
+                    inputProps={{
+                      min: getCurrentDateRange().start_date,
+                      max: getCurrentDateRange().end_date,
+                    }}
+                    helperText={`Available range: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
+                  />
+                </Box>
+              </Grid>
             )}
+
+            {/* 3. End Date */}
+            {formData.date && getCurrentDateRange() && (
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ mb: 2 }}>
+                  <label>
+                    End Date<span style={{ color: 'red' }}>*</span>
+                  </label>
+                  <TextField
+                    type="date"
+                    value={formData.dateRange.end_date}
+                    onChange={(e) => handleDateRangeChange('end_date', e.target.value)}
+                    fullWidth
+                    size="small"
+                    inputProps={{
+                      min: getCurrentDateRange().start_date,
+                      max: getCurrentDateRange().end_date,
+                    }}
+                    helperText={`Available range: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
+                  />
+                </Box>
+              </Grid>
+            )}
+
+            {/* 4. Media Spend */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Media Spend<span style={{ color: 'red' }}>*</span>
+                </label>
+                <Select
+                  name="mediaSpend"
+                  multiple
+                  value={formData.mediaSpend || []}
+                  onChange={(e) => setFormData(prev => ({ ...prev, mediaSpend: e.target.value }))}
+                  fullWidth
+                  size="small"
+                  renderValue={(selected) => selected.join(", ")}
+                >
+                  {getAvailableOptions('mediaSpend').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <Checkbox checked={formData.mediaSpend?.includes(option) || false} />
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
+
+            {/* 5. Media */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Media<span style={{ color: 'red' }}>*</span>
+                </label>
+                <Select
+                  name="media"
+                  multiple
+                  value={formData.media || []}
+                  onChange={(e) => setFormData(prev => ({ ...prev, media: e.target.value }))}
+                  fullWidth
+                  size="small"
+                  renderValue={(selected) => selected.join(", ")}
+                >
+                  {getAvailableOptions('media').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <Checkbox checked={formData.media?.includes(option) || false} />
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
+
+            {/* 6. Control Variable */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Control Variable<span style={{ color: 'red' }}>*</span>
+                </label>
+                <Select
+                  name="control_variable"
+                  multiple
+                  value={formData.control_variable || []}
+                  onChange={(e) => setFormData(prev => ({ ...prev, control_variable: e.target.value }))}
+                  fullWidth
+                  size="small"
+                  renderValue={(selected) => selected.join(", ")}
+                >
+                  {getAvailableOptions('control_variable').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <Checkbox checked={formData.control_variable?.includes(option) || false} />
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
+
+            {/* 7. Population */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Population
+                </label>
+                <Select
+                  name="population"
+                  value={formData.population || ""}
+                  onChange={(e) => setFormData(prev => ({ ...prev, population: e.target.value }))}
+                  fullWidth
+                  size="small"
+                >
+                  {getAvailableOptions('population').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
+
+            {/* 8. KPI */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Kpi<span style={{ color: 'red' }}>*</span>
+                </label>
+                <Select
+                  name="kpi"
+                  value={formData.kpi || ""}
+                  onChange={(e) => setFormData(prev => ({ ...prev, kpi: e.target.value }))}
+                  fullWidth
+                  size="small"
+                >
+                  {getAvailableOptions('kpi').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
+
+            {/* 9. Revenue Per KPI */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Revenue Per Kpi<span style={{ color: 'red' }}>*</span>
+                </label>
+                <Select
+                  name="revenuePerKpi"
+                  value={formData.revenuePerKpi || ""}
+                  onChange={(e) => setFormData(prev => ({ ...prev, revenuePerKpi: e.target.value }))}
+                  fullWidth
+                  size="small"
+                >
+                  {getAvailableOptions('revenuePerKpi').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
           </Grid>
 
           <Button
@@ -558,10 +689,31 @@ const ModelTrainingForm = ({ initialData }) => {
       </Paper>
 
       {error && (
-        <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError("")}>
-          {error}
-        </Alert>
-      )}
+      <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError("")}>
+        {error.split(/(https?:\/\/[^\s]+)/g).map((part, index) => {
+          if (/https?:\/\/[^\s]+/.test(part)) {
+            return (
+              <Link
+                key={index}
+                href={part}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{
+                  color: 'inherit',
+                  textDecoration: 'underline',
+                  '&:hover': {
+                    color: 'primary.dark'
+                  }
+                }}
+              >
+                {part}
+              </Link>
+            );
+          }
+          return part;
+        })}
+      </Alert>
+    )}
     </Box>
   );
 };
