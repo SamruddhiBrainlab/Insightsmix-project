@@ -242,7 +242,7 @@ def create_and_upload_eda(data_file_path, timestamp_folder):
             )
         else:
             print("Started EDA report generating...")
-            profile = ProfileReport(df, title="Pandas Profiling Report", explorative=True)
+            profile = ProfileReport(df, title="EDA Report", explorative=True)
         html_content = profile.to_html()
         destination_blob_name = f"{timestamp_folder}/eda_report.html"
         upload_html_to_gcs(html_content, destination_blob_name)

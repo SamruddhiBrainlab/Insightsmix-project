@@ -229,8 +229,9 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, start
         # Create and save model summary
         logger.info("Generating and saving model summary...")
         mmm_summarizer = summarizer.Summarizer(mmm)
-        local_summary_path = os.path.join( f'{start_date}/model_summary.html')
-        mmm_summarizer.output_model_results_summary('model_summary.html', start_date, end_date)
+        # summary_file_path = os.path.join( f'{start_date}')
+        local_summary_path = os.path.join( f'{tmp_dir}/model_summary.html')
+        mmm_summarizer.output_model_results_summary('model_summary.html', tmp_dir, start_date, end_date)
 
         # Upload summary to GCS
         # summary_destination_blob = 'result/model_summary.html'
