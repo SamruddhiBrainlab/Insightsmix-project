@@ -15,7 +15,7 @@ const ModelTrainingForm = ({ initialData }) => {
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
   
   // Define which fields should be multi-select
-  const multiSelectFields = ['control_variable', 'media', 'mediaSpend'];
+  const multiSelectFields = ['control_variable', 'media', 'mediaSpend', 'organic_media'];
   
   const [formData, setFormData] = useState({
     control_variable: [],
@@ -27,6 +27,7 @@ const ModelTrainingForm = ({ initialData }) => {
     kpi: "",
     revenuePerKpi: "",
     media: [], // Switched position with mediaSpend
+    organic_media: [], // New organic media field
   });
 
   // Function to extract channel names from spend columns
@@ -54,6 +55,18 @@ const ModelTrainingForm = ({ initialData }) => {
       return colStr.includes('click') || colStr.includes('impression') || 
              colStr.includes('reach') || colStr.includes('engagement') ||
              colStr.includes('spend') || colStr.includes('cost')
+    });
+  };
+
+  // Function to get organic media related columns
+  const getOrganicMediaOptions = () => {
+    return columns.filter(col => {
+      const colStr = String(col).toLowerCase();
+      // Include columns that might be organic media related
+      return colStr.includes('organic') || colStr.includes('seo') || 
+             colStr.includes('earned') || colStr.includes('viral') ||
+             colStr.includes('referral') || colStr.includes('direct') ||
+             colStr.includes('social') || colStr.includes('email');
     });
   };
 
@@ -167,6 +180,11 @@ const ModelTrainingForm = ({ initialData }) => {
       return getSpendColumns();
     }
 
+    // // Static logic: For organic_media, show organic media related columns
+    // if (field === 'organic_media') {
+    //   return getOrganicMediaOptions();
+    // }
+
     // Original logic for other fields (with exclusions)
     const selectedInOtherFields = Object.entries(formData)
       .filter(([key]) => key !== field && key !== 'dateRange') // Exclude dateRange from comparison
@@ -278,6 +296,7 @@ const ModelTrainingForm = ({ initialData }) => {
       kpi: "",
       revenuePerKpi: "",
       media: [], // Switched position
+      organic_media: [], // Reset organic media field
     });
     setJobId(null);
     setIsJobCompleted(false);
@@ -580,11 +599,36 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 6. Control Variable */}
+            {/* 6. Organic Media */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
-                  Control Variable<span style={{ color: 'red' }}>*</span>
+                  Organic Media
+                </label>
+                <Select
+                  name="organic_media"
+                  multiple
+                  value={formData.organic_media || []}
+                  onChange={(e) => setFormData(prev => ({ ...prev, organic_media: e.target.value }))}
+                  fullWidth
+                  size="small"
+                  renderValue={(selected) => selected.join(", ")}
+                >
+                  {getAvailableOptions('organic_media').map((option) => (
+                    <MenuItem key={option} value={option}>
+                      <Checkbox checked={formData.organic_media?.includes(option) || false} />
+                      <ListItemText primary={option} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
+
+            {/* 7. Control Variable */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ mb: 2 }}>
+                <label>
+                  Control Variable
                 </label>
                 <Select
                   name="control_variable"
@@ -605,7 +649,7 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 7. Population */}
+            {/* 8. Population */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
@@ -627,7 +671,7 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 8. KPI */}
+            {/* 9. KPI */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
@@ -649,11 +693,11 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 9. Revenue Per KPI */}
+            {/* 10. Revenue Per KPI */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
-                  Revenue Per Kpi<span style={{ color: 'red' }}>*</span>
+                  Revenue Per Kpi
                 </label>
                 <Select
                   name="revenuePerKpi"

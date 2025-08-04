@@ -61,7 +61,7 @@ def load_data_from_gcs(bucket_name, data_path):
         logger.error(f"Failed to load data from GCS: {e}")
         raise
 
-def prepare_data_loader(df, time, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, correct_media_to_channel, correct_media_spend_to_channel):
+def prepare_data_loader(df, time, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, organic_media, correct_media_to_channel, correct_media_spend_to_channel):
     """Prepare data loader for Meridian model using dynamic column mapping."""
     logger.info("Preparing data loader with dynamic column mapping...")
     try:
@@ -80,28 +80,53 @@ def prepare_data_loader(df, time, geo, controls, population, kpi, revenue_per_kp
         #     media=media.split(','),
         #     media_spend=media_spend.split(','),
         # )
-        coord_to_columns = load.CoordToColumns(
-        **{
-            key: value
-            for key, value in {
-                "time": time,
-                "geo": geo,
-                "controls": controls.split(',') if controls else None,
-                "population": population,
-                "kpi": kpi,
-                "revenue_per_kpi": revenue_per_kpi,
-                "media": media.split(',') if media else None,
-                "media_spend": media_spend.split(',') if media_spend else None,
-            }.items()
-            if value not in (None, "", [])
-        }
-    )
 
+        def is_valid(value):
+            return value not in (None, "", []) and value != ['']
+
+        if revenue_per_kpi:
+            coord_to_columns = load.CoordToColumns(
+                **{
+                    key: value
+                    for key, value in {
+                        "time": time,
+                        "geo": geo,
+                        "controls": controls.split(',') if controls else None,
+                        "population": population if population else None,
+                        "kpi": kpi,
+                        "revenue_per_kpi": revenue_per_kpi if revenue_per_kpi else None,
+                        "media": media.split(',') if media else None,
+                        "media_spend": media_spend.split(',') if media_spend else None,
+                        "organic_media": organic_media.split(',') if organic_media else None
+                    }.items()
+                    if is_valid(value)
+                }
+            )
+
+        else:
+            coord_to_columns = load.CoordToColumns(
+            **{
+                key: value
+                for key, value in {
+                    "time": time,
+                    "geo": geo,
+                    "controls": controls.split(',') if controls else None,
+                    "population": population if population else None,
+                    "kpi": kpi,
+                    "media": media.split(',') if media else None,
+                    "media_spend": media_spend.split(',') if media_spend else None,
+                    "organic_media": organic_media.split(',') if media else None
+                }.items()
+                if is_valid(value)
+                }
+            )
         correct_media_to_channel = json.loads(correct_media_to_channel)
         correct_media_spend_to_channel = json.loads(correct_media_spend_to_channel)
+        logger.info("coord_to_columns: ", coord_to_columns)
+
         # Create media to channel mappings
-        logger.info(f"correct_media_to_channel: {correct_media_to_channel} ======************")
-        logger.info(f"correct_media_spend_to_channel: {correct_media_spend_to_channel} @@@@@@@@@@@@@@@@@@@")
+        logger.info(f"correct_media_to_channel: {correct_media_to_channel}")
+        logger.info(f"correct_media_spend_to_channel: {correct_media_spend_to_channel}")
         data_loader = load.CsvDataLoader(
             csv_path="geo_media.csv",
             kpi_type='non_revenue',
@@ -168,7 +193,7 @@ def upload_to_gcs(local_file_path, bucket_name, destination_blob_name):
         raise
 
 
-def main(project_id, bucket_name, data_path, result_dir,output_path, time, start_date, end_date, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, correct_media_to_channel, correct_media_spend_to_channel):
+def main(project_id, bucket_name, data_path, result_dir,output_path, time, start_date, end_date, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, organic_media, correct_media_to_channel, correct_media_spend_to_channel):
     # Log the received arguments for debugging
     logger.info(f"Received project_id: {project_id}")
     logger.info(f"Received bucket_name: {bucket_name}")
@@ -190,6 +215,7 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, start
     # Log the media and media_spend variables as lists
     logger.info(f"Media: {media}")
     logger.info(f"Media Spend: {media_spend}")
+    logger.info(f"Media Spend: {organic_media}")
     
     # Log the 'correct_media_to_channel' and 'correct_media_spend_to_channel' as dictionaries
     logger.info(f"Correct Media to Channel: {correct_media_to_channel}")
@@ -207,7 +233,7 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, start
     df = load_data_from_gcs(bucket_name, data_path)
 
     # Prepare column mapping
-    data_loader = prepare_data_loader(df, time, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, correct_media_to_channel, correct_media_spend_to_channel)
+    data_loader = prepare_data_loader(df, time, geo, controls, population, kpi, revenue_per_kpi, media, media_spend, organic_media, correct_media_to_channel, correct_media_spend_to_channel)
     logger.info(f"data loader: {data_loader}")
     data_loader = data_loader.load()
 
@@ -240,7 +266,12 @@ def main(project_id, bucket_name, data_path, result_dir,output_path, time, start
         upload_to_gcs(local_summary_path, bucket_name, summary_destination_blob)
         
         budget_optimizer = optimizer.BudgetOptimizer(mmm)
-        optimization_results = budget_optimizer.optimize()
+        if revenue_per_kpi:
+            print("Revenue per kpi is present...")
+            optimization_results = budget_optimizer.optimize()
+        else:
+            print("Revenue per kpi is not present...")
+            optimization_results = budget_optimizer.optimize(use_kpi=True)
         local_optimization_output_path = os.path.join( 'optimization_output/')
         # optimization_destination_blob = f'result/{os.path.basename(result_dir)}/'
         optimization_destination_blob = f'{result_dir}/optimization_output.html'
@@ -272,6 +303,7 @@ if __name__ == '__main__':
     parser.add_argument('--revenue_per_kpi', required=True, help='Revenue per KPI column')
     parser.add_argument('--media', required=True, help='Comma-separated list of media columns')
     parser.add_argument('--media_spend', required=True, help='Comma-separated list of media spend columns')
+    parser.add_argument('--organic_media', required=True, help='Comma-separated list of organic media columns')
     parser.add_argument('--correct_media_to_channel', required=True, help='JSON string for correct media to channel mapping')
     parser.add_argument('--correct_media_spend_to_channel', required=True, help='JSON string for correct media spend to channel mapping')
 
@@ -284,7 +316,7 @@ if __name__ == '__main__':
             args.project_id, args.bucket_name, args.data_path,args.result_dir, args.output_path, 
             args.time, args.start_date, args.end_date, args.geo, args.controls, 
             args.population, args.kpi, args.revenue_per_kpi, args.media, 
-            args.media_spend, args.correct_media_to_channel, args.correct_media_spend_to_channel
+            args.media_spend, args.organic_media, args.correct_media_to_channel, args.correct_media_spend_to_channel
         )
     except Exception as e:
         logger.error(f"Training process failed: {e}", exc_info=True)
