@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
-
+from google.cloud import discoveryengine_v1
 
 load_dotenv()
 
@@ -25,22 +25,30 @@ from config.logging_config import setup_logging
 
 logger = setup_logging()
 
+import re
+import pandas as pd
+from datetime import datetime
+import os
+from flask import current_app, request, jsonify
+from werkzeug.utils import secure_filename
+from sqlalchemy import create_engine
+
+def sanitize_columns(df):
+    """Convert column names to BigQuery-compatible format."""
+    df.columns = [re.sub(r'[^a-zA-Z0-9_]', '_', str(col)) for col in df.columns]
+    return df
+
+def process_csv(file_path):
+    """Clean CSV for BigQuery compatibility."""
+    df = pd.read_csv(file_path)
+    df = sanitize_columns(df)
+    df.to_csv(file_path, index=False)
+    return df
+
 @api.route('/upload', methods=['POST'])
 def upload_data():
-    """
-    Handle file uploads and database connections for data ingestion.
-    
-    Supports three data sources:
-    - CSV file upload
-    - Excel file upload (converts to CSV)
-    - Database connection (exports to CSV)
-    
-    Returns:
-        tuple: JSON response with status and file details, and HTTP status code
-    """
     data_source = request.form.get('data_source')
-    logger.info(f"Received upload request for data source: {data_source}")
-
+    
     if data_source == 'csv_file':
         return _handle_csv_upload()
     elif data_source == 'excel_file':
@@ -48,99 +56,82 @@ def upload_data():
     elif data_source == 'database_connection':
         return _handle_database_connection()
     else:
-        logger.error(f"Invalid data source provided: {data_source}")
         return jsonify({'error': 'Invalid data source option'}), 400
 
 def _handle_csv_upload():
-    """Handle CSV file upload and storage."""
-    if 'file' not in request.files:
-        logger.error("No file provided in request")
-        return jsonify({'error': 'No file part'}), 400
+    if 'file' not in request.files or request.files['file'].filename == '':
+        return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
-    if file.filename == '':
-        logger.error("Empty filename provided")
-        return jsonify({'error': 'No selected file'}), 400
-
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
-        now = datetime.now()
-        filename = f"{filename.removesuffix('.csv')}_{now.strftime('%Y-%m-%d %H:%M:%S')}.csv"
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{filename.removesuffix('.csv')}_{timestamp}.csv"
         file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
         
         try:
             file.save(file_path)
-            logger.info(f"CSV file successfully saved: {filename}")
+            process_csv(file_path)  # Clean column names
             return jsonify({
                 "message": "File uploaded successfully",
                 "file_path": file_path,
                 "file_name": filename
             }), 200
         except Exception as e:
-            logger.error(f"Failed to save CSV file: {str(e)}")
-            return jsonify({'error': 'Failed to save file'}), 500
+            return jsonify({'error': str(e)}), 500
 
 def _handle_excel_upload():
-    """Handle Excel file upload, conversion to CSV, and storage."""
-    if 'file' not in request.files:
-        logger.error("No file provided in request")
-        return jsonify({'error': 'No file part'}), 400
+    if 'file' not in request.files or request.files['file'].filename == '':
+        return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
-    if file.filename == '':
-        logger.error("Empty filename provided")
-        return jsonify({'error': 'No selected file'}), 400
-
     if file and allowed_file(file.filename):
         try:
             filename = secure_filename(file.filename)
-            now = datetime.now()
-            filename = f"{filename}_{now.strftime('%Y-%m-%d %H:%M:%S')}"
-            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            temp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"{filename}_{timestamp}")
+            file.save(temp_path)
             
-            excel_data = pd.read_excel(file_path)
-            csv_path = f"{file_path.rsplit('.', 1)[0]}.csv"
-            excel_data.to_csv(csv_path, index=False)
-            os.remove(file_path)
+            # Convert to CSV with clean columns
+            df = pd.read_excel(temp_path)
+            df = sanitize_columns(df)
             
-            logger.info(f"Excel file converted and saved as CSV: {csv_path}")
+            csv_path = f"{temp_path.rsplit('.', 1)[0]}.csv"
+            df.to_csv(csv_path, index=False)
+            os.remove(temp_path)
+            
             return jsonify({
                 "message": "File uploaded successfully",
                 "file_path": csv_path,
-                "file_name": filename
+                "file_name": os.path.basename(csv_path)
             }), 200
         except Exception as e:
-            logger.error(f"Failed to process Excel file: {str(e)}")
             return jsonify({'error': str(e)}), 500
 
 def _handle_database_connection():
-    """Handle database connection and data export to CSV."""
-    required_fields = ['username', 'password', 'database_name', 'table_name']
-    form_data = {field: request.form.get(field) for field in required_fields}
+    required = ['username', 'password', 'database_name', 'table_name']
+    data = {field: request.form.get(field) for field in required}
     
-    if not all(form_data.values()):
-        missing_fields = [field for field, value in form_data.items() if not value]
-        logger.error(f"Missing required fields: {missing_fields}")
-        return jsonify({'error': 'Username, password, database name, and table name are required'}), 400
+    if not all(data.values()):
+        return jsonify({'error': 'All database fields are required'}), 400
 
     try:
-        db_connection_string = f"mysql+pymysql://{form_data['username']}:{form_data['password']}@localhost/{form_data['database_name']}"
-        engine = create_engine(db_connection_string)
-        query = f"SELECT * FROM {form_data['table_name']}"
+        connection_string = f"mysql+pymysql://{data['username']}:{data['password']}@localhost/{data['database_name']}"
+        engine = create_engine(connection_string)
         
-        db_data = pd.read_sql(query, engine)
-        csv_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'database_data.csv')
-        db_data.to_csv(csv_path, index=False)
+        df = pd.read_sql(f"SELECT * FROM {data['table_name']}", engine)
+        df = sanitize_columns(df)
         
-        logger.info(f"Database data successfully exported to CSV: {csv_path}")
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        csv_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f'database_data_{timestamp}.csv')
+        df.to_csv(csv_path, index=False)
+        
         return jsonify({
-            "message": "File uploaded successfully",
+            "message": "Database data exported successfully",
             "file_path": csv_path,
-            "file_name": 'database_data.csv'
+            "file_name": f'database_data_{timestamp}.csv'
         }), 200
     except Exception as e:
-        logger.error(f"Database connection/export failed: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -188,13 +179,39 @@ def generate_eda_report():
             logger.error(f"Error reading file {filename}: {str(e)}")
             return jsonify({"error": f"Error reading file: {str(e)}"}), 400
 
-        # Upload to GCS
+        # Upload main file to GCS
         try:
             uploader = GCSUploader(project_name)
             timestamp_folder = uploader.create_timestamp_folder()
+            
+            # Upload the main CSV file
             destination_path = f"{timestamp_folder}/{filename}"
             gcs_path = uploader.upload_to_gcs(file_data.decode('utf-8'), destination_path)
             logger.info(f"Successfully uploaded file to GCS: {gcs_path}")
+            
+            org_name = get_org_name(user_email)
+            # Prepare metadata.json content
+            metadata = [
+                {
+                    "organization": org_name,
+                    "project_name": project_name,
+                    "user_email": user_email,
+                    "files": [
+                        {
+                            "file_name": filename,
+                            "file_type": "csv",
+                            "path": destination_path
+                        }
+                    ]
+                }
+            ]
+            
+            # Upload metadata.json file
+            metadata_json_str = json.dumps(metadata, indent=2)
+            metadata_path = f"{timestamp_folder}/metadata.json"
+            metadata_gcs_path = uploader.upload_to_gcs(metadata_json_str, metadata_path)
+            logger.info(f"Successfully uploaded metadata to GCS: {metadata_gcs_path}")
+
         except Exception as e:
             logger.error(f"GCS upload failed: {str(e)}")
             return jsonify({"error": f"Failed to upload to GCS: {str(e)}"}), 500
@@ -660,3 +677,171 @@ def get_eda_report():
     except Exception as e:
         logger.error(f"Unexpected error in get_report: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+from data_science.data_science.run_agent import run_agent
+from data_science.data_science.run_agent import RunAgents
+import asyncio
+# agent_manager = AsyncAgentManager()
+
+
+@api.route('/qa-chatbot-v2', methods=['GET', 'POST'])
+async def qa_chatbot_v2():
+    """Enhanced version with session management"""
+    try:
+        # Handle both GET and POST requests
+        if request.method == 'GET':
+            user_query = request.args.get('user_query')
+            user_email = request.args.get('user_email', 'default')
+            app_id = request.args.get('app_id')
+            data_store_ids = request.args.getlist('data_store_ids')
+            session_id = request.args.get('session_id')
+        else:  # POST
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'JSON body is required for POST requests'}), 400
+            user_query = data.get('user_query')
+            user_email = data.get('user_email', 'default')
+            app_id = data.get('app_id')
+            data_store_ids = data.get('data_store_ids', [])
+            session_id = data.get('session_id')
+        
+        # database id will be same as organization name
+        database_id = get_org_name(user_email)
+        print("app id:", app_id)
+        print("session id: ",session_id)
+        if not user_query:
+            return jsonify({'error': 'user_query is required'}), 400
+        
+        # Validate query length
+        if len(user_query) > 10000:
+            return jsonify({'error': 'Query too long. Maximum 10000 characters allowed.'}), 400
+        
+        # Validate data_store_ids is a list if provided
+        if data_store_ids and not isinstance(data_store_ids, list):
+            return jsonify({'error': 'data_store_ids must be a list'}), 400
+        
+        # Run the agent with session management
+        response = await run_agent(user_query, user_email, database_id, app_id, data_store_ids, session_id)
+        res, data_store_ids = process_bot_response(response, data_store_ids)
+        
+        return jsonify({
+            'bot_response': res,
+            'user_email': user_email,
+            'session_id': response.get('session_id'),  # Return the session ID
+            'app_id': app_id,
+            'data_store_ids': data_store_ids,
+            'status': 'success'
+        }), 200
+        
+    except asyncio.TimeoutError:
+        logger.error("Agent execution timed out")
+        return jsonify({
+            'error': 'Request timed out. Please try again with a simpler query.'
+        }), 408
+        
+    except Exception as e:
+        logger.exception("Error in qa_chatbot_v2")
+        return jsonify({
+            'error': f'Failed to get response: {str(e)}',
+            'status': 'error'
+        }), 500
+
+
+# Add new endpoint for creating new sessions
+@api.route('/new-session', methods=['POST'])
+async def create_new_session():
+    """Create a new session for the user"""
+    try:
+        data = request.get_json() if request.method == 'POST' else {}
+        user_email = data.get('user_email', 'default') if data else request.args.get('user_email', 'default')
+        
+        # Create a new session
+        agent_runner = RunAgents(user_email)
+        session_id = await agent_runner.create_new_session()
+        
+        return jsonify({
+            'session_id': session_id,
+            'user_email': user_email,
+            'status': 'success',
+            'message': 'New session created successfully'
+        }), 200
+        
+    except Exception as e:
+        logger.exception("Error creating new session")
+        return jsonify({
+            'error': f'Failed to create new session: {str(e)}',
+            'status': 'error'
+        }), 500
+
+project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "insightsmix")
+
+@api.route('/get-all-projects', methods=['GET'])
+def get_all_projects():
+    """
+    Get all projects
+
+    Returns:
+        JSON: list of projects
+    """
+    
+    try:
+        client = discoveryengine_v1.EngineServiceClient()
+        parent = f"projects/{project_id}/locations/global/collections/default_collection"
+        
+        request = discoveryengine_v1.ListEnginesRequest(parent=parent)
+        engines = client.list_engines(request=request)
+        
+        engine_ids = [
+            engine.name.split("/")[-1]  # last part after "/engines/"
+            for engine in engines
+        ]
+        
+        return jsonify(engine_ids)
+    
+    except Exception as e:
+        print(f"Error in get_all_engines_and_datastores: {str(e)}")
+        return jsonify([]), 500
+    
+
+@api.route('/get-models-project', methods=['GET'])
+def get_models_for_project():
+    """
+    Retrieve datastore IDs for a specific engine in a UI-friendly format.
+
+    Query Params:
+        engine_id (str, optional): The engine ID. If omitted, an error is returned.
+
+    Returns:
+        JSON: List of datastore IDs (keeping original values with datastore- prefix)
+              but excluding dummy datastore IDs.
+    """
+    engine_id = request.args.get('engine_id')
+
+    if not engine_id:
+        return jsonify({
+            "error": "Engine ID not provided. Please pass `engine_id` or ensure the agent is initialized."
+        }), 400
+
+    try:
+        # Create a fresh client each time
+        client = discoveryengine_v1.EngineServiceClient()
+        engine_name = f"projects/{project_id}/locations/global/collections/default_collection/engines/{engine_id}"
+
+        request_obj = discoveryengine_v1.GetEngineRequest(name=engine_name)
+        engine = client.get_engine(request=request_obj)
+
+        # Filter out the unwanted dummy datastore
+        filtered_data_stores = [
+            ds for ds in engine.data_store_ids
+            if ds != "dummy-chatbot-datastore_1754553084575"
+        ]
+
+        return jsonify({
+            "data_store_ids": filtered_data_stores,
+            "engine_id": engine_id
+        }), 200
+
+    except Exception as e:
+        error_msg = f"Failed to retrieve data stores for engine {engine_id}: {str(e)}"
+        print(f"Error in get_models_for_project: {error_msg}")
+        return jsonify({"error": error_msg}), 500

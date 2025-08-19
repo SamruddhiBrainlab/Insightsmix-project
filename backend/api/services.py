@@ -1,10 +1,14 @@
 import os
 import io
+import re
+import json
+import ast
 from google.cloud import aiplatform, storage
 from datetime import datetime
 import logging
 from typing import Dict, Any
 from api.models import User, Project
+from typing import Tuple, List, Any
 from .db import db
 import pandas as pd
 from ydata_profiling import ProfileReport
@@ -173,8 +177,11 @@ class ModelTrainingService:
             raise
 
 def get_org_name(email):
-    domain = email.split('@')[1] if '@' in email else 'unknown'
-    return domain 
+    if '@' not in email:
+        return 'unknown'
+    domain = email.split('@')[1]  # part after @
+    return domain.split('.')[0]   # part before first dot
+
 
 def get_or_create_user(email):
     """Retrieve a user by email or create a new one, inferring organization from email domain."""
@@ -725,3 +732,46 @@ def get_eda_report_from_gcs(project_id, user_email, gcs_file_name):
     except Exception as e:
         print(f"Error in get_report_from_gcs: {str(e)}")
         return {'error': 'Internal server error occurred'}, 500
+
+
+def process_bot_response(response: Any, datastore_list: List[str]) -> Tuple[str, List[str]]:
+    """
+    Process bot response to extract valid datastore IDs.
+
+    Args:
+        response (Any): The response string or object from the bot.
+        datastore_list (List[str]): Current list of datastore IDs.
+
+    Returns:
+        Tuple[str, List[str]]: A tuple containing:
+            - result (str): Empty string if successful, else the original response.
+            - datastore_list (List[str]): Updated list of datastore IDs.
+    """
+    # print(response, "+===============================")
+    try:
+        # Extract content inside the first [ ... ]
+        if isinstance(response, dict):
+            response.pop("session_id", None)
+            response.pop("rephrased_query", None)
+            query_ans = str(response)
+        else:
+            query_ans = str(response)
+        ds_list_str = str(query_ans).split("[", 1)[-1].split("]", 1)[0]
+
+        if "datastore-" in ds_list_str:
+            parsed_list = ast.literal_eval(f"[{ds_list_str}]")
+
+            # Safely remove unwanted datastore if present
+            parsed_list = [
+                ds for ds in parsed_list
+                if ds != "dummy-chatbot-datastore_1754553084575"
+            ]
+
+            return "", parsed_list
+    except (ValueError, SyntaxError, Exception):
+        # Catch malformed response or parsing issues
+        return response, datastore_list
+
+    # No match found
+    return response, datastore_list
+
