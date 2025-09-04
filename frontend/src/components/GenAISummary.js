@@ -17,13 +17,14 @@ const GenAISummary = ({ selectedProject }) => {
   const [msoContent, setMsoContent] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const backendUrl = process.env.REACT_APP_BACKEND_URL;
   const user = localStorage.getItem("user")
     ? JSON.parse(localStorage.getItem("user"))
     : null;
 
   const fetchMarkdownContent = (filename) => {
     return fetch(
-      `/api/genai-summary-files?project_id=${selectedProject}&email=${user.email}&filename=${filename}`
+      `${backendUrl}/api/genai-summary-files?project_id=${selectedProject}&email=${user.email}&filename=${filename}`
     ).then((response) => {
       if (!response.ok) {
         throw new Error(

@@ -51,7 +51,7 @@ project/
 5. Run the Flask server:
    python app.py
 
-   The backend will be available at `http://localhost:5000`
+   The backend will be available at `http://localhost:8080`
 
 ## Frontend Setup
 
@@ -72,3 +72,16 @@ project/
 
 1. Build and run the containers:
    docker build -t insightsmix .
+
+
+## Steps for GCP OAuth Client ID Setup with 
+- Navigate to API & Services > Credentials in the Cloud Console.
+- Click Create Credentials > OAuth Client ID.
+- Choose the application type (e.g., Web Application).
+- Configure the redirect URIs for your app (for Web App, e.g., http://localhost:3000/dashboard for local testing).
+- Download the generated OAuth Client ID JSON file.
+
+## google-cloud-storage:
+Create a Service Account Key:
+Set the environment variable GOOGLE_APPLICATION_CREDENTIALS:
+- export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your-key.json"
