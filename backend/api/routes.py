@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 import io
 import copy
@@ -19,13 +20,14 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from google.cloud import discoveryengine_v1
+from config.logging_config import setup_logging
 
+logger = setup_logging()
 load_dotenv()
 
 # Define a blueprint for API routes
 api = Blueprint("api", __name__)
 BUCKET_NAME = os.getenv("BUCKET_NAME")
-
 
 # Function to check allowed file extensions
 def allowed_file(filename):
@@ -34,19 +36,6 @@ def allowed_file(filename):
         and filename.rsplit(".", 1)[1].lower()
         in current_app.config["ALLOWED_EXTENSIONS"]
     )
-
-
-from config.logging_config import setup_logging
-
-logger = setup_logging()
-
-import re
-import pandas as pd
-from datetime import datetime
-import os
-from flask import current_app, request, jsonify
-from werkzeug.utils import secure_filename
-from sqlalchemy import create_engine
 
 
 def sanitize_columns(df):

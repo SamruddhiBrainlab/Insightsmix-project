@@ -12,6 +12,7 @@ from typing import Tuple, List, Any
 from .db import db
 import pandas as pd
 from ydata_profiling import ProfileReport
+from bs4 import BeautifulSoup
 import base64
 import pdfkit
 import vertexai
@@ -26,7 +27,6 @@ from config.logging_config import setup_logging
 
 load_dotenv()
 
-
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 aiplatform.init(project="insightsmix")
 
@@ -35,7 +35,6 @@ credentials, project = default()
 client = storage.Client(credentials=credentials)
 
 logger = setup_logging()
-
 
 class GCSUploader:
     def __init__(self, project_name):
@@ -99,12 +98,88 @@ class ModelTrainingService:
         date_range = training_params.get("dateRange")
 
         # Convert the mappings to JSON string format
-        CORRECT_MEDIA_TO_CHANNEL_JSON = str(CORRECT_MEDIA_TO_CHANNEL).replace("'", '"')
-        CORRECT_MEDIA_SPEND_TO_CHANNEL_JSON = str(
-            CORRECT_MEDIA_SPEND_TO_CHANNEL
-        ).replace("'", '"')
+        CORRECT_MEDIA_TO_CHANNEL_JSON = json.dumps(CORRECT_MEDIA_TO_CHANNEL)
+        CORRECT_MEDIA_SPEND_TO_CHANNEL_JSON = json.dumps(CORRECT_MEDIA_SPEND_TO_CHANNEL)
+
+        # Handle custom priors
+        custom_priors = training_params.get("customPriors", {})
+        custom_priors_enabled = custom_priors.get("enabled", False)
+        
+        # Get organic media
+        organic_media = training_params.get("organic_media", [])
+        organic_media_str = ",".join(organic_media) if organic_media else ""
+        
+        # Build the args list
+        args = [
+            "--project_id",
+            self.project_id,
+            "--bucket_name",
+            BUCKET_NAME,
+            "--data_path",
+            self.gcs_path,
+            "--result_dir",
+            self.timestamp_folder,
+            "--output_path",
+            "mmm/output",
+            "--time",
+            training_params.get("date"),
+            "--start_date",
+            date_range.get("start_date"),
+            "--end_date",
+            date_range.get("end_date"),
+            "--geo",
+            training_params.get("geo"),
+            "--controls",
+            ",".join(training_params.get("control_variable", [])),
+            "--population",
+            training_params.get("population", ""),
+            "--kpi",
+            training_params.get("kpi", ""),
+            "--revenue_per_kpi",
+            training_params.get("revenuePerKpi", ""),
+            "--organic_media",
+            ",".join(training_params.get("organic_media", [])),
+            "--media",
+            ",".join(training_params.get("media", [])),
+            "--media_spend",
+            ",".join(training_params.get("mediaSpend", [])),
+            "--correct_media_to_channel",
+            CORRECT_MEDIA_TO_CHANNEL_JSON,
+            "--correct_media_spend_to_channel",
+            CORRECT_MEDIA_SPEND_TO_CHANNEL_JSON,
+        ]
+        
+        # Add organic_media if present
+        if organic_media_str:
+            args.extend([
+                "--organic_media",
+                organic_media_str,
+            ])
+
+        # Add custom priors if enabled
+        if custom_priors_enabled:
+            priors_data = custom_priors.get("priors", {})
+            if priors_data:
+                # Transform priors to match the expected format in train.py
+                # Expected format: {"channel_name": {"mean": 0.2, "sigma": 0.8}, ...}
+                formatted_priors = {}
+                for channel_name, prior_values in priors_data.items():
+                    formatted_priors[channel_name] = {
+                        "mean": prior_values.get("mean", 0.4),
+                        "sigma": prior_values.get("sigma", 0.8)
+                    }
+                
+                priors_json = json.dumps(formatted_priors)
+                args.extend([
+                    "--custom_priors_enabled",
+                    "true",
+                    "--custom_priors",
+                    priors_json,
+                ])
 
         print("timestamp_folder", self.timestamp_folder)
+        print("Custom priors args:", args[-4:] if custom_priors_enabled else "None")
+        
         return [
             {
                 "machine_spec": {
@@ -115,47 +190,11 @@ class ModelTrainingService:
                 "replica_count": 1,
                 "container_spec": {
                     "image_uri": self.base_image_uri,
-                    "args": [
-                        "--project_id",
-                        self.project_id,
-                        "--bucket_name",
-                        BUCKET_NAME,
-                        "--data_path",
-                        self.gcs_path,
-                        "--result_dir",
-                        self.timestamp_folder,
-                        "--output_path",
-                        "mmm/output",
-                        "--time",
-                        training_params.get("date"),
-                        "--start_date",
-                        date_range.get("start_date"),
-                        "--end_date",
-                        date_range.get("end_date"),
-                        "--geo",
-                        training_params.get("geo"),
-                        "--controls",
-                        ",".join(training_params.get("control_variable", [])),
-                        "--population",
-                        training_params.get("population", None),
-                        "--kpi",
-                        training_params.get("kpi", []),
-                        "--revenue_per_kpi",
-                        training_params.get("revenuePerKpi", None),
-                        "--media",
-                        ",".join(training_params.get("media", [])),
-                        "--media_spend",
-                        ",".join(training_params.get("mediaSpend", [])),
-                        "--organic_media",
-                        ",".join(training_params.get("organic_media", [])),
-                        "--correct_media_to_channel",
-                        CORRECT_MEDIA_TO_CHANNEL_JSON,
-                        "--correct_media_spend_to_channel",
-                        CORRECT_MEDIA_SPEND_TO_CHANNEL_JSON,
-                    ],
+                    "args": args,
                 },
             }
         ]
+
 
     def start_training_job(self, training_params: Dict[str, Any]) -> Dict[str, Any]:
         """Start a new training job with the provided parameters."""
@@ -279,6 +318,79 @@ def upload_html_to_gcs(html_content, destination_blob_name):
     print(f"HTML content uploaded to {destination_blob_name}.")
 
 
+def remove_tabs_from_string(html_string):
+    """
+    Remove specified tabs from a pandas profiling HTML string.
+    
+    Args:
+        html_string (str): HTML content as string
+        
+    Returns:
+        str: Modified HTML string with tabs removed
+    """
+    html_cleaned = re.sub(
+        r'<p class="text-body-secondary text-end">Brought to you by <a href="https://ydata\.ai/\?[^"]*">YData</a></p>',
+        '',
+        html_string
+    )
+    
+    # Backup pattern in case the first one doesn't match exactly
+    html_cleaned = re.sub(
+        r'<p[^>]*class="[^"]*text-body-secondary[^"]*text-end[^"]*"[^>]*>.*?Brought to you by.*?YData.*?</p>',
+        '',
+        html_cleaned,
+        flags=re.DOTALL | re.IGNORECASE
+    )
+    # Main tab names to remove (case insensitive)
+    tabs_to_remove_text = ['interactions', 'correlations', 'missing values', 'sample', 'alerts', 'reproduction']
+    
+    # # Overview sub-tabs to remove
+    # overview_tabs_to_remove = ['alerts', 'reproduction']
+    
+    soup = BeautifulSoup(html_cleaned, 'html.parser')
+    
+    # Find and remove main navigation links by text content
+    nav_links = soup.find_all('a')
+    for link in nav_links:
+        link_text = link.get_text(strip=True).lower()
+        
+        # Check if this link text matches any tab we want to remove
+        should_remove = False
+        for tab_name in tabs_to_remove_text:
+            if tab_name in link_text:
+                should_remove = True
+                break
+        
+        if should_remove:
+            # Remove the parent <li> element if it exists
+            parent_li = link.find_parent('li')
+            if parent_li:
+                parent_li.decompose()
+            else:
+                link.decompose()
+
+    buttons = soup.find_all('button')
+    for button in buttons:
+        button_text = button.get_text(strip=True).lower()
+        # Check if this link text matches any tab we want to remove
+        should_remove = False
+        for button_name in tabs_to_remove_text:
+            if button_name in button_text:
+                should_remove = True
+                break
+        
+        if should_remove:
+            # Remove the parent <li> element if it exists
+            parent_li = button.find_parent('li')
+            if parent_li:
+                parent_li.decompose()
+            else:
+                link.decompose()
+
+    
+    return str(soup)
+
+
 def create_and_upload_eda(data_file_path, timestamp_folder):
     try:
         df = pd.read_csv(data_file_path)
@@ -290,8 +402,10 @@ def create_and_upload_eda(data_file_path, timestamp_folder):
             print("Started EDA report generating...")
             profile = ProfileReport(df, title="EDA Report", explorative=True)
         html_content = profile.to_html()
+
+        modified_html_content = remove_tabs_from_string(html_content)
         destination_blob_name = f"{timestamp_folder}/eda_report.html"
-        upload_html_to_gcs(html_content, destination_blob_name)
+        upload_html_to_gcs(modified_html_content, destination_blob_name)
     except:
         import logging
 
@@ -490,7 +604,7 @@ def generate_pdf_summary(input_file_path, summary_file_path):
 
         # Initialize Vertex AI
         vertexai.init(project="insightsmix", location="us-central1")
-        model = GenerativeModel("gemini-1.5-pro-002")
+        model = GenerativeModel("gemini-2.5-pro")
 
         # Create document part from PDF
         document1 = Part.from_data(

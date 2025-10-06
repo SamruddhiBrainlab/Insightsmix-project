@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { Box, Paper, Grid, Select, MenuItem, Checkbox, ListItemText, Button, Alert, Typography, CircularProgress, TextField, Link } from "@mui/material";
+import { 
+  Box, Paper, Grid, Select, MenuItem, Checkbox, ListItemText, Button, 
+  Alert, Typography, CircularProgress, TextField, Link, Divider,
+  FormControlLabel, Switch, Collapse, Card, CardContent, Chip,
+  Avatar, Stack, Accordion, AccordionSummary, AccordionDetails,
+  IconButton, FormControl, InputLabel
+} from "@mui/material";
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import DeleteIcon from '@mui/icons-material/Delete';
+import TuneIcon from '@mui/icons-material/Tune';
+import SettingsIcon from '@mui/icons-material/Settings';
+import { Brain as BrainIcon } from 'lucide-react';
 
 const ModelTrainingForm = ({ initialData }) => {
   const user = localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user")) : null;
@@ -11,34 +22,109 @@ const ModelTrainingForm = ({ initialData }) => {
   const [jobId, setJobId] = useState(savedJobId || null);
   const [isJobCompleted, setIsJobCompleted] = useState(false);
   const [columns, setColumns] = useState([]);
-  const [dateRanges, setDateRanges] = useState({}); // Store date ranges for each date column
+  const [dateRanges, setDateRanges] = useState({});
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
   
-  // Define which fields should be multi-select
+  // Custom Priors State
+  const [customPriorsEnabled, setCustomPriorsEnabled] = useState(false);
+  const [selectedChannels, setSelectedChannels] = useState([]);
+  const [channelPriors, setChannelPriors] = useState({});
+  
   const multiSelectFields = ['control_variable', 'media', 'mediaSpend', 'organic_media'];
   
   const [formData, setFormData] = useState({
     control_variable: [],
     population: "",
-    mediaSpend: [], // Switched position with media
+    mediaSpend: [],
     date: "",
-    dateRange: { start_date: "", end_date: "" }, // Add date range fields
+    dateRange: { start_date: "", end_date: "" },
     geo: "",
     kpi: "",
     revenuePerKpi: "",
-    media: [], // Switched position with mediaSpend
-    organic_media: [], // New organic media field
+    media: [],
+    organic_media: [],
   });
 
-  // Function to extract channel names from spend columns
+  // Extract channel name from spend column
+  const extractChannelName = (spendColumn) => {
+    return spendColumn.replace(/_(spend|spends|cost|costs)$/i, '');
+  };
+
+  // Get channel options from mediaSpend selections
+  const getChannelOptionsFromMediaSpend = () => {
+    return formData.mediaSpend.map(spendColumn => {
+      const channelName = extractChannelName(spendColumn);
+      return {
+        name: channelName,
+        spendColumn: spendColumn,
+        color: getColorForChannel(channelName),
+        category: 'Paid Media'
+      };
+    });
+  };
+
+  // Generate color for channel
+  const getColorForChannel = (channelName) => {
+    const colors = ['#1976d2', '#9c27b0', '#f57c00', '#388e3c', '#d32f2f', '#0288d1', '#7b1fa2', '#c2185b'];
+    const hash = channelName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return colors[hash % colors.length];
+  };
+
+  // Get channel info
+  const getChannelInfo = (channelName) => {
+    const channelOptions = getChannelOptionsFromMediaSpend();
+    return channelOptions.find(c => c.name === channelName) || {
+      name: channelName,
+      color: '#757575',
+      category: 'Unknown'
+    };
+  };
+
+  // Toggle channel selection
+  const toggleChannelSelection = (channelName) => {
+    setSelectedChannels(prev => {
+      if (prev.includes(channelName)) {
+        // Remove channel
+        const updated = prev.filter(c => c !== channelName);
+        // Also remove from channelPriors
+        const { [channelName]: removed, ...rest } = channelPriors;
+        setChannelPriors(rest);
+        return updated;
+      } else {
+        // Add channel with default priors
+        setChannelPriors(prev => ({
+          ...prev,
+          [channelName]: { mean: 0.2, sigma: 0.9 }
+        }));
+        return [...prev, channelName];
+      }
+    });
+  };
+
+  // Update channel prior
+  const updateChannelPrior = (channelName, field, value) => {
+    setChannelPriors(prev => ({
+      ...prev,
+      [channelName]: {
+        ...prev[channelName],
+        [field]: parseFloat(value) || 0
+      }
+    }));
+  };
+
+  // Watch mediaSpend changes and update available channels for priors
+  useEffect(() => {
+    // Remove selected channels that are no longer in mediaSpend
+    const currentChannelNames = formData.mediaSpend.map(extractChannelName);
+    setSelectedChannels(prev => prev.filter(ch => currentChannelNames.includes(ch)));
+  }, [formData.mediaSpend]);
+
   const extractChannelNames = (spendColumns) => {
     return spendColumns.map(spendColumn => {
-      // Remove common spend-related suffixes to get channel name
       return spendColumn.replace(/_(spend|spends|cost|costs)$/i, '');
     });
   };
 
-  // Function to get spend columns
   const getSpendColumns = () => {
     return columns.filter(col => {
       const colStr = String(col).toLowerCase();
@@ -47,22 +133,18 @@ const ModelTrainingForm = ({ initialData }) => {
     });
   };
 
-  // Function to get all channel-related columns (not just extracted names)
   const getAllChannelOptions = () => {
     return columns.filter(col => {
       const colStr = String(col).toLowerCase();
-      // Include columns that contain channel-related keywords
       return colStr.includes('click') || colStr.includes('impression') || 
              colStr.includes('reach') || colStr.includes('engagement') ||
-             colStr.includes('spend') || colStr.includes('cost')
+             colStr.includes('spend') || colStr.includes('cost');
     });
   };
 
-  // Function to get organic media related columns
   const getOrganicMediaOptions = () => {
     return columns.filter(col => {
       const colStr = String(col).toLowerCase();
-      // Include columns that might be organic media related
       return colStr.includes('organic') || colStr.includes('seo') || 
              colStr.includes('earned') || colStr.includes('viral') ||
              colStr.includes('referral') || colStr.includes('direct') ||
@@ -70,7 +152,6 @@ const ModelTrainingForm = ({ initialData }) => {
     });
   };
 
-  // Validation function for media channels matching
   const validateMediaChannels = () => {
     const { media, mediaSpend } = formData;
     
@@ -85,17 +166,13 @@ const ModelTrainingForm = ({ initialData }) => {
       };
     }
     
-    // Extract channel base names for comparison
     const getChannelBaseName = (channelName) => {
-      // Remove common suffixes like _clicks, _spend, _impressions, etc.
       return channelName.replace(/_(clicks|spend|spends|impressions|impression|views|ctr|cpc|cpm|cost|costs)$/i, '');
     };
     
     const mediaBaseNames = media.map(getChannelBaseName).sort();
     const mediaSpendBaseNames = mediaSpend.map(getChannelBaseName).sort();
     
-    console.log(mediaBaseNames)
-    console.log(mediaSpendBaseNames)
     const mismatchedChannels = [];
     for (let i = 0; i < mediaBaseNames.length; i++) {
       if (mediaBaseNames[i] !== mediaSpendBaseNames[i]) {
@@ -116,7 +193,6 @@ const ModelTrainingForm = ({ initialData }) => {
     return { isValid: true, message: "" };
   };
 
-  // Validation function for date ranges
   const validateDateRange = () => {
     const { date, dateRange } = formData;
     
@@ -170,26 +246,17 @@ const ModelTrainingForm = ({ initialData }) => {
   };
 
   const getAvailableOptions = (field) => {
-    // Static logic: For media, show all options that contain channel names
     if (field === 'media') {
       return getAllChannelOptions();
     }
 
-    // Static logic: For mediaSpend, always show all spend-related columns
     if (field === 'mediaSpend') {
       return getSpendColumns();
     }
 
-    // // Static logic: For organic_media, show organic media related columns
-    // if (field === 'organic_media') {
-    //   return getOrganicMediaOptions();
-    // }
-
-    // Original logic for other fields (with exclusions)
     const selectedInOtherFields = Object.entries(formData)
-      .filter(([key]) => key !== field && key !== 'dateRange') // Exclude dateRange from comparison
+      .filter(([key]) => key !== field && key !== 'dateRange')
       .flatMap(([key, value]) => {
-        // Handle both single values and arrays
         if (Array.isArray(value)) {
           return value;
         } else if (value) {
@@ -212,7 +279,6 @@ const ModelTrainingForm = ({ initialData }) => {
     );
   };
 
-  // Handle date column selection change
   const handleDateColumnChange = (selectedDateColumn) => {
     const selectedRange = dateRanges[selectedDateColumn];
     setFormData(prev => ({
@@ -225,7 +291,6 @@ const ModelTrainingForm = ({ initialData }) => {
     }));
   };
 
-  // Handle date range input changes
   const handleDateRangeChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -235,6 +300,88 @@ const ModelTrainingForm = ({ initialData }) => {
       }
     }));
   };
+
+  const resetForm = () => {
+    setFormData({
+      control_variable: [],
+      population: "",
+      mediaSpend: [],
+      date: "",
+      dateRange: { start_date: "", end_date: "" },
+      geo: "",
+      kpi: "",
+      revenuePerKpi: "",
+      media: [],
+      organic_media: [],
+    });
+    setCustomPriorsEnabled(false);
+    setSelectedChannels([]);
+    setChannelPriors({});
+    setJobId(null);
+    setIsJobCompleted(false);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    const mediaValidation = validateMediaChannels();
+    if (!mediaValidation.isValid) {
+      setError(mediaValidation.message);
+      return;
+    }
+    
+    const dateValidation = validateDateRange();
+    if (!dateValidation.isValid) {
+      setError(dateValidation.message);
+      return;
+    }
+    
+    setIsLoading(true);
+    setError("");
+
+    const fullFormData = {
+      ...formData,
+      projectName: initialData.project_name,
+      projectId: initialData.project_id,
+      userEmail: user.email,
+      customPriors: customPriorsEnabled ? {
+        enabled: true,
+        priors: channelPriors
+      } : {
+        enabled: false,
+        priors: {}
+      }
+    };
+
+    try {
+      const response = await fetch(`${backendUrl}/api/submit-form`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fullFormData),
+      });
+      const data = await response.json();
+      
+      if (response.ok) {
+        setJobId(data.result.job_id);
+        localStorage.setItem('jobId', data.result.job_id);
+        localStorage.setItem('isLoading', 'true');
+      } else {
+        throw new Error(data.message || "Submission failed");
+      }
+    } catch (err) {
+      setError(err.message);
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isLoading) {
+      localStorage.setItem('isLoading', 'true');
+    } else {
+      localStorage.removeItem('isLoading');
+      localStorage.removeItem('jobId');
+    }
+  }, [isLoading]);
 
   useEffect(() => {
     const fetchColumns = async () => {
@@ -259,15 +406,13 @@ const ModelTrainingForm = ({ initialData }) => {
         const data = await response.json();
         
         if (data.success) {
-          console.log(data.options)
-          // Filter out any options that are empty, null, or undefined
+          console.log(data.options);
           const filteredOptions = (data.options || []).filter(option => 
             option !== null && option !== undefined && option !== "" && option !== "Unnamed: 0"
           );
           const sortedOptions = filteredOptions.sort((a, b) => a.localeCompare(b));
           setColumns(sortedOptions);
           
-          // Extract and set date ranges if they exist in the response
           if (data.date_ranges) {
             setDateRanges(data.date_ranges);
           }
@@ -284,25 +429,6 @@ const ModelTrainingForm = ({ initialData }) => {
   
     fetchColumns();
   }, [user?.email, initialData?.project_id, backendUrl]);
-
-  const resetForm = () => {
-    setFormData({
-      control_variable: [],
-      population: "",
-      mediaSpend: [], // Switched position
-      date: "",
-      dateRange: { start_date: "", end_date: "" },
-      geo: "",
-      kpi: "",
-      revenuePerKpi: "",
-      media: [], // Switched position
-      organic_media: [], // Reset organic media field
-    });
-    setJobId(null);
-    setIsJobCompleted(false);
-    localStorage.removeItem('jobId');
-    localStorage.removeItem('isLoading');
-  };
 
   useEffect(() => {
     let intervalId;
@@ -344,78 +470,17 @@ const ModelTrainingForm = ({ initialData }) => {
     };
   }, [jobId, isJobCompleted]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Validate media channels before submission
-    const mediaValidation = validateMediaChannels();
-    if (!mediaValidation.isValid) {
-      setError(mediaValidation.message);
-      return;
-    }
-    
-    // Validate date ranges before submission
-    const dateValidation = validateDateRange();
-    if (!dateValidation.isValid) {
-      setError(dateValidation.message);
-      return;
-    }
-    
-    setIsLoading(true);
-    setError("");
-
-    const fullFormData = {
-      ...formData,
-      projectName: initialData.project_name,
-      projectId: initialData.project_id,
-      userEmail: user.email
-    };
-
-    try {
-      const response = await fetch(`${backendUrl}/api/submit-form`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fullFormData),
-      });
-      const data = await response.json();
-      
-      if (response.ok) {
-        setJobId(data.result.job_id);
-        localStorage.setItem('jobId', data.result.job_id);
-        localStorage.setItem('isLoading', 'true');
-      } else {
-        throw new Error(data.message || "Submission failed");
-      }
-    } catch (err) {
-      setError(err.message);
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isLoading) {
-      localStorage.setItem('isLoading', 'true');
-    } else {
-      localStorage.removeItem('isLoading');
-      localStorage.removeItem('jobId')
-    }
-  }, [isLoading]);
-
-  // Real-time validation effect for media channels
   useEffect(() => {
     const mediaValidation = validateMediaChannels();
     if (!mediaValidation.isValid && (formData.media.length > 0 || formData.mediaSpend.length > 0)) {
-      // Only show validation error if user has made selections
       if (error !== mediaValidation.message) {
         setError(mediaValidation.message);
       }
     } else if (mediaValidation.isValid && error && error.includes('Media')) {
-      // Clear media-related errors when validation passes
       setError("");
     }
   }, [formData.media, formData.mediaSpend]);
 
-  // Real-time validation effect for date ranges
   useEffect(() => {
     const dateValidation = validateDateRange();
     if (!dateValidation.isValid && formData.date && (formData.dateRange.start_date || formData.dateRange.end_date)) {
@@ -423,7 +488,6 @@ const ModelTrainingForm = ({ initialData }) => {
         setError(dateValidation.message);
       }
     } else if (dateValidation.isValid && error && (error.includes('date') || error.includes('Date'))) {
-      // Clear date-related errors when validation passes
       setError("");
     }
   }, [formData.date, formData.dateRange]);
@@ -446,7 +510,6 @@ const ModelTrainingForm = ({ initialData }) => {
     );
   }
 
-  // Get current date range info for display
   const getCurrentDateRange = () => {
     if (formData.date && dateRanges[formData.date]) {
       return dateRanges[formData.date];
@@ -454,12 +517,13 @@ const ModelTrainingForm = ({ initialData }) => {
     return null;
   };
 
+  const channelOptions = getChannelOptionsFromMediaSpend();
+
   return (
     <Box sx={{ width: '800px', margin: '0 auto' }}>
       <Paper sx={{ p: 3 }}>
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
-            {/* 1. Geo */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
@@ -481,7 +545,6 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* Date Column Selection (needed for date range fields) */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
@@ -503,53 +566,50 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 2. Start Date */}
             {formData.date && getCurrentDateRange() && (
-              <Grid item xs={12} sm={6}>
-                <Box sx={{ mb: 2 }}>
-                  <label>
-                    Start Date<span style={{ color: 'red' }}>*</span>
-                  </label>
-                  <TextField
-                    type="date"
-                    value={formData.dateRange.start_date}
-                    onChange={(e) => handleDateRangeChange('start_date', e.target.value)}
-                    fullWidth
-                    size="small"
-                    inputProps={{
-                      min: getCurrentDateRange().start_date,
-                      max: getCurrentDateRange().end_date,
-                    }}
-                    helperText={`Available range: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
-                  />
-                </Box>
-              </Grid>
+              <>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 2 }}>
+                    <label>
+                      Start Date<span style={{ color: 'red' }}>*</span>
+                    </label>
+                    <TextField
+                      type="date"
+                      value={formData.dateRange.start_date}
+                      onChange={(e) => handleDateRangeChange('start_date', e.target.value)}
+                      fullWidth
+                      size="small"
+                      inputProps={{
+                        min: getCurrentDateRange().start_date,
+                        max: getCurrentDateRange().end_date,
+                      }}
+                      helperText={`Available: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
+                    />
+                  </Box>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 2 }}>
+                    <label>
+                      End Date<span style={{ color: 'red' }}>*</span>
+                    </label>
+                    <TextField
+                      type="date"
+                      value={formData.dateRange.end_date}
+                      onChange={(e) => handleDateRangeChange('end_date', e.target.value)}
+                      fullWidth
+                      size="small"
+                      inputProps={{
+                        min: getCurrentDateRange().start_date,
+                        max: getCurrentDateRange().end_date,
+                      }}
+                      helperText={`Available: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
+                    />
+                  </Box>
+                </Grid>
+              </>
             )}
 
-            {/* 3. End Date */}
-            {formData.date && getCurrentDateRange() && (
-              <Grid item xs={12} sm={6}>
-                <Box sx={{ mb: 2 }}>
-                  <label>
-                    End Date<span style={{ color: 'red' }}>*</span>
-                  </label>
-                  <TextField
-                    type="date"
-                    value={formData.dateRange.end_date}
-                    onChange={(e) => handleDateRangeChange('end_date', e.target.value)}
-                    fullWidth
-                    size="small"
-                    inputProps={{
-                      min: getCurrentDateRange().start_date,
-                      max: getCurrentDateRange().end_date,
-                    }}
-                    helperText={`Available range: ${getCurrentDateRange().start_date} to ${getCurrentDateRange().end_date}`}
-                  />
-                </Box>
-              </Grid>
-            )}
-
-            {/* 4. Media Spend */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
@@ -574,7 +634,6 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 5. Media */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
@@ -599,12 +658,9 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 6. Organic Media */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
-                <label>
-                  Organic Media
-                </label>
+                <label>Organic Media</label>
                 <Select
                   name="organic_media"
                   multiple
@@ -624,12 +680,9 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 7. Control Variable */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
-                <label>
-                  Control Variable
-                </label>
+                <label>Control Variable</label>
                 <Select
                   name="control_variable"
                   multiple
@@ -649,12 +702,9 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 8. Population */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
-                <label>
-                  Population
-                </label>
+                <label>Population</label>
                 <Select
                   name="population"
                   value={formData.population || ""}
@@ -671,11 +721,10 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 9. KPI */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
-                  Kpi<span style={{ color: 'red' }}>*</span>
+                  KPI<span style={{ color: 'red' }}>*</span>
                 </label>
                 <Select
                   name="kpi"
@@ -693,12 +742,9 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
 
-            {/* 10. Revenue Per KPI */}
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
-                <label>
-                  Revenue Per Kpi
-                </label>
+                <label>Revenue Per KPI</label>
                 <Select
                   name="revenuePerKpi"
                   value={formData.revenuePerKpi || ""}
@@ -715,6 +761,228 @@ const ModelTrainingForm = ({ initialData }) => {
               </Box>
             </Grid>
           </Grid>
+
+          <Divider sx={{ marginY: 4 }} />
+
+          {/* Custom Priors Section */}
+          <Box sx={{ marginBottom: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <BrainIcon size={24} color="#9c27b0" />
+                <Typography variant="h5" component="h3" sx={{ fontWeight: 'bold' }}>
+                  Custom Bayesian Priors
+                </Typography>
+              </Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={customPriorsEnabled}
+                    onChange={(e) => setCustomPriorsEnabled(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="Enable Custom Priors"
+              />
+            </Box>
+
+            <Collapse in={customPriorsEnabled}>
+              <Alert severity="info" sx={{ marginBottom: 3 }}>
+                Set custom prior distributions for your media channels to incorporate domain knowledge into your MMM model.
+                Default values: Mean = 0.2, Standard Deviation = 0.9
+              </Alert>
+
+              {formData.mediaSpend.length === 0 && (
+                <Alert severity="warning" sx={{ marginBottom: 3 }}>
+                  Please select Media Spend channels first to configure custom priors.
+                </Alert>
+              )}
+
+              {formData.mediaSpend.length > 0 && (
+                <>
+                  <Card variant="outlined" sx={{ marginBottom: 3 }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <TuneIcon />
+                          Add Channels for Custom Priors
+                        </Typography>
+                        <Chip 
+                          label={`${selectedChannels.length} Channel${selectedChannels.length !== 1 ? 's' : ''}`} 
+                          color={selectedChannels.length > 0 ? "primary" : "default"}
+                          size="small"
+                        />
+                      </Box>
+
+                      <Grid container spacing={2} alignItems="center">
+                        <Grid item xs={12} md={8}>
+                          <FormControl fullWidth>
+                            <InputLabel>Select Media Channel</InputLabel>
+                            <Select
+                              label="Select Media Channel"
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value && !selectedChannels.includes(e.target.value)) {
+                                  toggleChannelSelection(e.target.value);
+                                }
+                              }}
+                            >
+                              {channelOptions
+                                .filter(channel => !selectedChannels.includes(channel.name))
+                                .map((channel) => (
+                                  <MenuItem key={channel.name} value={channel.name}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                      <Avatar sx={{ bgcolor: channel.color, width: 24, height: 24 }}>
+                                        <Typography sx={{ fontSize: '10px', fontWeight: 'bold', color: 'white' }}>
+                                          {channel.name.slice(0, 2).toUpperCase()}
+                                        </Typography>
+                                      </Avatar>
+                                      <Box>
+                                        <Typography variant="body2">{channel.name}</Typography>
+                                        <Typography variant="caption" color="textSecondary">
+                                          {channel.category}
+                                        </Typography>
+                                      </Box>
+                                    </Box>
+                                  </MenuItem>
+                                ))
+                              }
+                              {channelOptions.filter(channel => !selectedChannels.includes(channel.name)).length === 0 && (
+                                <MenuItem disabled>
+                                  <Typography variant="body2" color="textSecondary">
+                                    All channels have been added
+                                  </Typography>
+                                </MenuItem>
+                              )}
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                      </Grid>
+
+                      {selectedChannels.length > 0 && (
+                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f8f9fa', borderRadius: 1 }}>
+                          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                            Selected Channels:
+                          </Typography>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                            {selectedChannels.map((channelName) => {
+                              const channelInfo = getChannelInfo(channelName);
+                              return (
+                                <Chip
+                                  key={channelName}
+                                  size="small"
+                                  avatar={
+                                    <Avatar sx={{ bgcolor: channelInfo.color, width: 20, height: 20 }}>
+                                      <Typography sx={{ fontSize: '8px', fontWeight: 'bold', color: 'white' }}>
+                                        {channelInfo.name.slice(0, 2).toUpperCase()}
+                                      </Typography>
+                                    </Avatar>
+                                  }
+                                  label={channelName}
+                                  onDelete={() => toggleChannelSelection(channelName)}
+                                  color="primary"
+                                  variant="outlined"
+                                />
+                              );
+                            })}
+                          </Box>
+                        </Box>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {selectedChannels.length > 0 && (
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="h6" sx={{ marginBottom: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <SettingsIcon />
+                          Configure Prior Distributions
+                        </Typography>
+
+                        <Stack spacing={2}>
+                          {selectedChannels.map((channelName) => {
+                            const channelInfo = getChannelInfo(channelName);
+                            const priors = channelPriors[channelName] || { mean: 0.2, sigma: 0.9 };
+                            
+                            return (
+                              <Accordion key={channelName} elevation={0} sx={{ border: '1px solid #e0e0e0' }}>
+                                <AccordionSummary
+                                  expandIcon={<ExpandMoreIcon />}
+                                  sx={{ 
+                                    backgroundColor: '#fafafa',
+                                    '&:hover': { backgroundColor: '#f0f0f0' }
+                                  }}
+                                >
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                                    <Avatar sx={{ bgcolor: channelInfo.color, width: 32, height: 32 }}>
+                                      <Typography sx={{ fontSize: '12px', fontWeight: 'bold' }}>
+                                        {channelInfo.name.slice(0, 2).toUpperCase()}
+                                      </Typography>
+                                    </Avatar>
+                                    <Box sx={{ flex: 1 }}>
+                                      <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
+                                        {channelInfo.name}
+                                      </Typography>
+                                      <Typography variant="caption" color="textSecondary">
+                                        μ: {priors.mean}, σ: {priors.sigma}
+                                      </Typography>
+                                    </Box>
+                                    <IconButton
+                                      size="small"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleChannelSelection(channelName);
+                                      }}
+                                      sx={{ color: 'error.main' }}
+                                    >
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Box>
+                                </AccordionSummary>
+                                <AccordionDetails>
+                                  <Grid container spacing={3}>
+                                    <Grid item xs={12} md={6}>
+                                      <TextField
+                                        fullWidth
+                                        label="roi_mu"
+                                        type="number"
+                                        value={priors.mean}
+                                        onChange={(e) => updateChannelPrior(channelName, 'mean', e.target.value)}
+                                        inputProps={{ 
+                                          step: 0.01,
+                                          min: 0
+                                        }}
+                                        helperText="Mu for ROI prior."
+                                        size="small"
+                                      />
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                      <TextField
+                                        fullWidth
+                                        label="roi_sigma"
+                                        type="number"
+                                        value={priors.sigma}
+                                        onChange={(e) => updateChannelPrior(channelName, 'sigma', e.target.value)}
+                                        inputProps={{ 
+                                          step: 0.01,
+                                          min: 0.01
+                                        }}
+                                        helperText="Sigma for ROI prior."
+                                        size="small"
+                                      />
+                                    </Grid>
+                                  </Grid>
+                                </AccordionDetails>
+                              </Accordion>
+                            );
+                          })}
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
+              )}
+            </Collapse>
+          </Box>
 
           <Button
             type="submit"
@@ -733,31 +1001,31 @@ const ModelTrainingForm = ({ initialData }) => {
       </Paper>
 
       {error && (
-      <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError("")}>
-        {error.split(/(https?:\/\/[^\s]+)/g).map((part, index) => {
-          if (/https?:\/\/[^\s]+/.test(part)) {
-            return (
-              <Link
-                key={index}
-                href={part}
-                target="_blank"
-                rel="noopener noreferrer"
-                sx={{
-                  color: 'inherit',
-                  textDecoration: 'underline',
-                  '&:hover': {
-                    color: 'primary.dark'
-                  }
-                }}
-              >
-                {part}
-              </Link>
-            );
-          }
-          return part;
-        })}
-      </Alert>
-    )}
+        <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError("")}>
+          {error.split(/(https?:\/\/[^\s]+)/g).map((part, index) => {
+            if (/https?:\/\/[^\s]+/.test(part)) {
+              return (
+                <Link
+                  key={index}
+                  href={part}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{
+                    color: 'inherit',
+                    textDecoration: 'underline',
+                    '&:hover': {
+                      color: 'primary.dark'
+                    }
+                  }}
+                >
+                  {part}
+                </Link>
+              );
+            }
+            return part;
+          })}
+        </Alert>
+      )}
     </Box>
   );
 };
