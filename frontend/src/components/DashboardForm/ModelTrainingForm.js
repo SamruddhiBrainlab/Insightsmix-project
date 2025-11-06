@@ -11,6 +11,15 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import TuneIcon from '@mui/icons-material/Tune';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { Brain as BrainIcon } from 'lucide-react';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import AddIcon from '@mui/icons-material/Add';
+import CalendarIcon from '@mui/icons-material/CalendarToday';
+import MoneyIcon from '@mui/icons-material/AttachMoney';
+
+// MUI components
+import InputAdornment from '@mui/material/InputAdornment';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import ToggleButton from '@mui/material/ToggleButton';
 
 const ModelTrainingForm = ({ initialData }) => {
   const user = localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user")) : null;
@@ -29,7 +38,27 @@ const ModelTrainingForm = ({ initialData }) => {
   const [customPriorsEnabled, setCustomPriorsEnabled] = useState(false);
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [channelPriors, setChannelPriors] = useState({});
+
+  // Advanced Settings State
+    const [selectedSetting, setSelectedSetting] = useState('');
+    const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+    const [advancedSettings, setAdvancedSettings] = useState({
+      media_effects_dist: "log_normal",
+      max_lag: 8,
+      media_prior_type: "roi",
+      knots: null,
+      adstock_decay_spec: "geometric",
+      enable_aks: false
+    });
+
+  // Lift test
+  const [liftTests, setLiftTests] = useState([]);
+  const [showLiftTestSection, setShowLiftTestSection] = useState(false);
+  const [outcomeType, setOutcomeType] = useState('revenue');
   
+  // Reach and Frequency
+  const [reachFrequencyMode, setReachFrequencyMode] = useState('without');
+
   const multiSelectFields = ['control_variable', 'media', 'mediaSpend', 'organic_media'];
   
   const [formData, setFormData] = useState({
@@ -43,7 +72,26 @@ const ModelTrainingForm = ({ initialData }) => {
     revenuePerKpi: "",
     media: [],
     organic_media: [],
+    // R&F fields
+    reach: "",
+    frequency: "",
+    rf_spend: []
   });
+
+  const addLiftTest = () => {
+    setLiftTests(prev => [
+      ...prev,
+      { id: Date.now(), channelName: '', startDate: '', endDate: '', actualSpend: '', output: '', standError: '' }
+    ]);
+  };
+
+  const removeLiftTest = (id) => {
+    setLiftTests(prev => prev.filter(t => t.id !== id));
+  };
+
+  const updateLiftTest = (id, field, value) => {
+    setLiftTests(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+  };
 
   // Extract channel name from spend column
   const extractChannelName = (spendColumn) => {
@@ -131,6 +179,12 @@ const ModelTrainingForm = ({ initialData }) => {
       return colStr.includes('spend') || colStr.includes('spends') || 
              colStr.includes('cost') || colStr.includes('costs');
     });
+  };
+
+  // Get RF spend options (excluding media spend selections)
+  const getRFSpendOptions = () => {
+    const spendColumns = getSpendColumns();
+    return spendColumns.filter(col => !formData.mediaSpend.includes(col));
   };
 
   const getAllChannelOptions = () => {
@@ -254,8 +308,12 @@ const ModelTrainingForm = ({ initialData }) => {
       return getSpendColumns();
     }
 
+    if (field === 'rf_spend') {
+      return getRFSpendOptions();
+    }
+
     const selectedInOtherFields = Object.entries(formData)
-      .filter(([key]) => key !== field && key !== 'dateRange')
+      .filter(([key]) => key !== field && key !== 'dateRange' && key !== 'reach' && key !== 'frequency' && key !== 'rf_spend')
       .flatMap(([key, value]) => {
         if (Array.isArray(value)) {
           return value;
@@ -313,12 +371,17 @@ const ModelTrainingForm = ({ initialData }) => {
       revenuePerKpi: "",
       media: [],
       organic_media: [],
+      reach: [],
+      frequency: [],
+      rf_spend: []
     });
     setCustomPriorsEnabled(false);
+    setShowLiftTestSection(false);
     setSelectedChannels([]);
     setChannelPriors({});
     setJobId(null);
     setIsJobCompleted(false);
+    setReachFrequencyMode('without');
   };
 
   const handleSubmit = async (e) => {
@@ -350,7 +413,26 @@ const ModelTrainingForm = ({ initialData }) => {
       } : {
         enabled: false,
         priors: {}
-      }
+      },
+      advancedSettings: showAdvancedSettings ? {
+        ...advancedSettings
+      } : null,
+      liftTests: liftTests.map(t => ({
+        channel_name: t.channelName,
+        start_date: t.startDate,
+        end_date: t.endDate,
+        actual_spend: parseFloat(t.actualSpend),
+        incremental_outcome: parseFloat(t.output),
+        stand_error: parseFloat(t.standError),
+      })),
+      outcomeType,
+      reachFrequencyMode,
+      // Only include R&F data if mode is 'with'
+      ...(reachFrequencyMode === 'with' && {
+        reach: formData.reach,
+        frequency: formData.frequency,
+        rf_spend: formData.rf_spend
+      })
     };
 
     try {
@@ -448,7 +530,7 @@ const ModelTrainingForm = ({ initialData }) => {
           setTimeout(() => {
             resetForm();
           }, 2000);
-        } else if (data.state === 'JOB_STATE_FAILED') {
+        } else if (data.state === 'JOB_STATE_FAILED' || data.state === 'JOB_STATE_CANCELLED') {
           setError('Job failed: ' + (data.error || 'Unknown error'));
           setIsLoading(false);
           clearInterval(intervalId);
@@ -492,6 +574,18 @@ const ModelTrainingForm = ({ initialData }) => {
     }
   }, [formData.date, formData.dateRange]);
 
+  // Clear R&F fields when switching modes
+  useEffect(() => {
+    if (reachFrequencyMode === 'without') {
+      setFormData(prev => ({
+        ...prev,
+        reach: "",
+        frequency: "",
+        rf_spend: []
+      }));
+    }
+  }, [reachFrequencyMode]);
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', width: '100%', gap: 3 }}>
@@ -524,6 +618,81 @@ const ModelTrainingForm = ({ initialData }) => {
       <Paper sx={{ p: 3 }}>
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
+            {/* Outcome Type Selection */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ marginBottom: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+                  Target KPI:
+                </Typography>
+                <ToggleButtonGroup
+                  value={outcomeType}
+                  exclusive
+                  onChange={(e, newValue) => {
+                    if (newValue !== null) {
+                      setOutcomeType(newValue);
+                    }
+                  }}
+                  size="small"
+                  sx={{
+                    '& .MuiToggleButton-root': {
+                      '&.Mui-selected': {
+                        backgroundColor: '#2196f3',
+                        color: '#fff',
+                        '&:hover': {
+                          backgroundColor: '#1976d2'
+                        }
+                      }
+                    }
+                  }}
+                >
+                  <ToggleButton value="revenue">
+                    Revenue
+                  </ToggleButton>
+                  <ToggleButton value="other">
+                    Other
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+            </Grid>
+
+            {/* Reach and Frequency Selection */}
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ marginBottom: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+                  Reach & Frequency:
+                </Typography>
+                <ToggleButtonGroup
+                  value={reachFrequencyMode}
+                  exclusive
+                  onChange={(e, newValue) => {
+                    if (newValue !== null) {
+                      setReachFrequencyMode(newValue);
+                    }
+                  }}
+                  size="small"
+                  sx={{
+                    '& .MuiToggleButton-root': {
+                      '&.Mui-selected': {
+                        backgroundColor: '#2196f3',
+                        color: '#fff',
+                        '&:hover': {
+                          backgroundColor: '#1976d2'
+                        }
+                      }
+                    }
+                  }}
+                >
+                  <ToggleButton value="without">
+                    Without RF
+                  </ToggleButton>
+                  <ToggleButton value="with">
+                    With RF
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+            </Grid>
+
+          
             <Grid item xs={12} sm={6}>
               <Box sx={{ mb: 2 }}>
                 <label>
@@ -760,6 +929,82 @@ const ModelTrainingForm = ({ initialData }) => {
                 </Select>
               </Box>
             </Grid>
+
+            {/* R&F Fields - Only shown when mode is 'with' */}
+            {reachFrequencyMode === 'with' && (
+              <>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 2 }}>
+                    <label>
+                      RF Spend<span style={{ color: 'red' }}>*</span>
+                    </label>
+                    <Select
+                      name="rf_spend"
+                      multiple
+                      value={formData.rf_spend || []}
+                      onChange={(e) => setFormData(prev => ({ ...prev, rf_spend: e.target.value }))}
+                      fullWidth
+                      size="small"
+                      renderValue={(selected) => selected.join(", ")}
+                    >
+                      {getAvailableOptions('rf_spend').map((option) => (
+                        <MenuItem key={option} value={option}>
+                          <Checkbox checked={formData.rf_spend?.includes(option) || false} />
+                          <ListItemText primary={option} />
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 2 }}>
+                    <label>
+                      Reach<span style={{ color: 'red' }}>*</span>
+                    </label>
+                    <Select
+                      name="reach"
+                      multiple
+                      value={formData.reach || []}
+                      onChange={(e) => setFormData(prev => ({ ...prev, reach: e.target.value }))}
+                      fullWidth
+                      size="small"
+                      renderValue={(selected) => selected.join(", ")}
+                    >
+                      {getAvailableOptions('reach').map((option) => (
+                        <MenuItem key={option} value={option}>
+                          <Checkbox checked={formData.reach?.includes(option) || false} />
+                          <ListItemText primary={option} />
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Box>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ mb: 2 }}>
+                    <label>
+                      Frequency<span style={{ color: 'red' }}>*</span>
+                    </label>
+                    <Select
+                      name="frequency"
+                      multiple
+                      value={formData.frequency || []}
+                      onChange={(e) => setFormData(prev => ({ ...prev, frequency: e.target.value }))}
+                      fullWidth
+                      size="small"
+                      renderValue={(selected) => selected.join(", ")}
+                    >
+                      {getAvailableOptions('frequency').map((option) => (
+                        <MenuItem key={option} value={option}>
+                          <Checkbox checked={formData.frequency?.includes(option) || false} />
+                          <ListItemText primary={option} />
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Box>
+                </Grid>
+              </>
+            )}
           </Grid>
 
           <Divider sx={{ marginY: 4 }} />
@@ -984,19 +1229,469 @@ const ModelTrainingForm = ({ initialData }) => {
             </Collapse>
           </Box>
 
-          <Button
-            type="submit"
-            variant="contained"
-            sx={{
-              mt: 3,
-              backgroundColor: "#fcd535",
-              color: "#000",
-              '&:hover': { backgroundColor: "#fccd17" },
-              textTransform: 'none'
-            }}
-          >
-            Build Model
-          </Button>
+          <Divider sx={{ marginY: 4 }} />
+          {/* Advanced Settings Section */}
+          <Box sx={{ marginBottom: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <SettingsIcon size={24} color="#1976d2" />
+                <Typography variant="h5" component="h3" sx={{ fontWeight: 'bold' }}>
+                  Advanced Settings
+                </Typography>
+              </Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={showAdvancedSettings}
+                    onChange={(e) => setShowAdvancedSettings(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="Enable Advanced Settings"
+              />
+            </Box>
+
+            <Collapse in={showAdvancedSettings}>
+              {/* Dropdown to select field */}
+              <Box sx={{ marginBottom: 3 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Select Setting to Configure</InputLabel>
+                  <Select
+                    size="small"
+                    value={selectedSetting}
+                    onChange={(e) => setSelectedSetting(e.target.value)}
+                    label="Select Setting to Configure"
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    <MenuItem value="media_effects_dist">Media Effects Distribution</MenuItem>
+                    <MenuItem value="max_lag">Max Lag</MenuItem>
+                    <MenuItem value="media_prior_type">Media Prior Type</MenuItem>
+                    <MenuItem value="knots">Knots</MenuItem>
+                    <MenuItem value="adstock_decay_spec">Adstock Decay Spec</MenuItem>
+                    <MenuItem value="enable_aks">Enable AKS</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+
+              {/* Conditional rendering based on selected field */}
+              <Grid container spacing={2}>
+                {/* Show currently selected setting input */}
+              {selectedSetting && (
+                <Grid container spacing={2} sx={{ marginBottom: 3, marginLeft: 0 }}>
+                  {selectedSetting === 'media_effects_dist' && (
+                    <Grid item xs={12}>
+                      <FormControl fullWidth>
+                        <InputLabel>Media Effects Distribution</InputLabel>
+                        <Select
+                          size="small"
+                          value={advancedSettings.media_effects_dist}
+                          onChange={(e) => setAdvancedSettings({ ...advancedSettings, media_effects_dist: e.target.value })}
+                          label="Media Effects Distribution"
+                        >
+                          <MenuItem value="log_normal">Log Normal</MenuItem>
+                          <MenuItem value="normal">Normal</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+
+                  {selectedSetting === 'max_lag' && (
+                    <Grid item xs={12}>
+                      <TextField 
+                        fullWidth 
+                        size="small"
+                        label="Max Lag" 
+                        type="number"
+                        value={advancedSettings.max_lag}
+                        onChange={(e) => setAdvancedSettings({ ...advancedSettings, max_lag: parseInt(e.target.value) || 0 })}
+                        helperText="Default: 8"
+                      />
+                    </Grid>
+                  )}
+
+                  {selectedSetting === 'media_prior_type' && (
+                    <Grid item xs={12}>
+                      <FormControl fullWidth>
+                        <InputLabel>Media Prior Type</InputLabel>
+                        <Select
+                          size="small"
+                          value={advancedSettings.media_prior_type}
+                          onChange={(e) => setAdvancedSettings({ ...advancedSettings, media_prior_type: e.target.value })}
+                          label="Media Prior Type"
+                        >
+                          <MenuItem value="roi">ROI</MenuItem>
+                          <MenuItem value="mroi">MROI</MenuItem>
+                          <MenuItem value="contribution">Contribution</MenuItem>
+                          <MenuItem value="coefficient">Coefficient</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+
+                  {selectedSetting === 'knots' && (
+                    <Grid item xs={12}>
+                      <TextField 
+                        fullWidth 
+                        label="Knots" 
+                        type="number"
+                        size="small"
+                        value={advancedSettings.knots === null ? '' : advancedSettings.knots}
+                        onChange={(e) => setAdvancedSettings({ ...advancedSettings, knots: e.target.value === '' ? null : parseInt(e.target.value) })}
+                        helperText="Default: None (leave empty)"
+                        placeholder="None"
+                      />
+                    </Grid>
+                  )}
+
+                  {selectedSetting === 'adstock_decay_spec' && (
+                    <Grid item xs={12}>
+                      <FormControl fullWidth>
+                        <InputLabel>Adstock Decay Spec</InputLabel>
+                        <Select
+                          size="small"
+                          value={advancedSettings.adstock_decay_spec}
+                          onChange={(e) => setAdvancedSettings({ ...advancedSettings, adstock_decay_spec: e.target.value })}
+                          label="Adstock Decay Spec"
+                        >
+                          <MenuItem value="geometric">Geometric</MenuItem>
+                          <MenuItem value="binomial">Binomial</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+
+                  {selectedSetting === 'enable_aks' && (
+                    <Grid item xs={12}>
+                      <FormControl fullWidth>
+                        <InputLabel>Enable AKS</InputLabel>
+                        <Select
+                          size="small"
+                          value={advancedSettings.enable_aks}
+                          onChange={(e) => setAdvancedSettings({ ...advancedSettings, enable_aks: e.target.value })}
+                          label="Enable AKS"
+                        >
+                          <MenuItem value={false}>False</MenuItem>
+                          <MenuItem value={true}>True</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+                </Grid>
+              )}
+
+              {/* Display all configured settings */}
+              <Grid container spacing={2} sx={{ marginBottom: 3, marginLeft: 0 }}>
+                {advancedSettings.media_effects_dist !== 'log_normal' && (
+                  <Grid item xs={12}>
+                    <TextField 
+                      fullWidth 
+                      label="Media Effects Distribution" 
+                      size="small"
+                      value={advancedSettings.media_effects_dist}
+                      InputProps={{ readOnly: true }}
+                      variant="filled"
+                    />
+                  </Grid>
+                )}
+
+                {advancedSettings.max_lag !== 8 && (
+                  <Grid item xs={12}>
+                    <TextField 
+                      fullWidth 
+                      label="Max Lag" 
+                      size="small"
+                      value={advancedSettings.max_lag}
+                      InputProps={{ readOnly: true }}
+                      variant="filled"
+                    />
+                  </Grid>
+                )}
+
+                {advancedSettings.media_prior_type !== 'roi' && (
+                  <Grid item xs={12}>
+                    <TextField 
+                      fullWidth 
+                      label="Media Prior Type" 
+                      size="small"
+                      value={advancedSettings.media_prior_type}
+                      InputProps={{ readOnly: true }}
+                      variant="filled"
+                    />
+                  </Grid>
+                )}
+
+                {advancedSettings.knots !== null && (
+                  <Grid item xs={12}>
+                    <TextField 
+                      fullWidth 
+                      label="Knots" 
+                      size="small"
+                      value={advancedSettings.knots}
+                      InputProps={{ readOnly: true }}
+                      variant="filled"
+                    />
+                  </Grid>
+                )}
+
+                {advancedSettings.adstock_decay_spec !== 'geometric' && (
+                  <Grid item xs={12}>
+                    <TextField 
+                      fullWidth 
+                      label="Adstock Decay Spec" 
+                      size="small"
+                      value={advancedSettings.adstock_decay_spec}
+                      InputProps={{ readOnly: true }}
+                      variant="filled"
+                    />
+                  </Grid>
+                )}
+
+                {advancedSettings.enable_aks !== false && (
+                  <Grid item xs={12}>
+                    <TextField 
+                      fullWidth 
+                      label="Enable AKS" 
+                      size="small"
+                      value={advancedSettings.enable_aks ? 'True' : 'False'}
+                      InputProps={{ readOnly: true }}
+                      variant="filled"
+                    />
+                  </Grid>
+                )}
+              </Grid>
+              </Grid>
+            </Collapse>
+          </Box>
+
+          <Divider sx={{ marginY: 4 }} />
+
+          {/* Lift Test Section Toggle */}
+           <Box sx={{ marginBottom: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TrendingUpIcon />
+                <Typography variant="h5" component="h3" sx={{ fontWeight: 'bold' }}>
+                  Lift Test
+                </Typography>
+              </Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={showLiftTestSection}
+                    onChange={(e) => setShowLiftTestSection(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="Add Lift Test"
+              />
+            </Box>
+
+            <Collapse in={showLiftTestSection}>
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                <Typography variant="h5" component="h3" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <TrendingUpIcon />
+                  Lift Test Configuration
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={addLiftTest}
+                  sx={{ 
+                    backgroundColor: '#4caf50',
+                    '&:hover': {
+                      backgroundColor: '#45a049'
+                    }
+                  }}
+                >
+                  Add Lift Test
+                </Button>
+              </Box>
+
+              <Alert severity="info" sx={{ marginBottom: 3 }}>
+                Add experimental results for channels where you have conducted lift tests to improve model accuracy.
+              </Alert>
+
+              {liftTests.length === 0 ? (
+                <Paper 
+                  elevation={0} 
+                  sx={{ 
+                    padding: 6, 
+                    textAlign: 'center', 
+                    backgroundColor: '#f5f5f5',
+                    border: '2px dashed #ccc'
+                  }}
+                >
+                  <TrendingUpIcon sx={{ fontSize: 60, color: '#bbb', marginBottom: 2 }} />
+                  <Typography variant="h6" color="textSecondary" gutterBottom>
+                    No lift tests added yet
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Click "Add Lift Test" to get started
+                  </Typography>
+                </Paper>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {liftTests.map((test) => (
+                    <Card key={test.id} variant="outlined" sx={{ padding: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                        <Typography variant="h6" component="h4">
+                          Lift Test
+                        </Typography>
+                        <IconButton
+                          onClick={() => removeLiftTest(test.id)}
+                          color="error"
+                          size="small"
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
+
+                      <Grid container spacing={2}>
+                        {/* Channel Name */}
+                        <Grid item xs={12} md={4}>
+                          <FormControl fullWidth required size="small">
+                            <InputLabel>Channel Name</InputLabel>
+                            <Select
+                              value={test.channelName}
+                              label="Channel Name"
+                              onChange={(e) => updateLiftTest(test.id, 'channelName', e.target.value)}
+                            >
+                              {channelOptions.map(channel => (
+                                <MenuItem key={channel.name} value={channel.name}>{channel.name}</MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Grid>
+
+                        {/* Start Date */}
+                        <Grid item xs={12} md={4}>
+                          <TextField
+                            fullWidth
+                            required
+                            size="small"
+                            label="Start Date"
+                            type="date"
+                            value={test.startDate}
+                            onChange={(e) => updateLiftTest(test.id, 'startDate', e.target.value)}
+                            InputLabelProps={{
+                              shrink: true,
+                            }}
+                          />
+                        </Grid>
+
+                        {/* End Date */}
+                        <Grid item xs={12} md={4}>
+                          <TextField
+                            fullWidth
+                            required
+                            size="small"
+                            label="End Date"
+                            type="date"
+                            value={test.endDate}
+                            onChange={(e) => updateLiftTest(test.id, 'endDate', e.target.value)}
+                            InputLabelProps={{
+                              shrink: true,
+                            }}
+                            inputProps={{
+                              min: test.startDate,
+                            }}
+                            error={test.endDate < test.startDate}
+                            helperText={test.endDate < test.startDate ? "End date cannot be before start date" : ""}
+                          />
+                        </Grid>
+
+                        {/* Actual Spend */}
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            fullWidth
+                            required
+                            size="small"
+                            label="Lift Test Spend"
+                            type="number"
+                            inputProps={{ step: 0.01, min: 0 }}
+                            placeholder="0.00"
+                            value={test.actualSpend}
+                            onChange={(e) => updateLiftTest(test.id, 'actualSpend', e.target.value)}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <MoneyIcon sx={{ fontSize: 16 }} />
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                        </Grid>
+
+                        {/* Output */}
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            fullWidth
+                            required
+                            size="small"
+                            label="Incremental Outcome"
+                            type="number"
+                            inputProps={{ step: 0.01 }}
+                            placeholder="0.00"
+                            value={test.output}
+                            onChange={(e) => updateLiftTest(test.id, 'output', e.target.value)}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <MoneyIcon sx={{ fontSize: 16 }} />
+                                </InputAdornment>
+                              ),
+                            }}
+                            helperText="The increase in outcome during the test period"
+                          />
+                        </Grid>
+                      
+                        {/* Standard error */}
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            fullWidth
+                            required
+                            size="small"
+                            label="Standard error"
+                            type="number"
+                            inputProps={{ step: 0.01, min: 0 }}
+                            placeholder="0"
+                            value={test.standError}
+                            onChange={(e) => updateLiftTest(test.id, 'standError', e.target.value)}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <MoneyIcon sx={{ fontSize: 16 }} />
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                        </Grid>
+                      </Grid>
+                    </Card>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          </Collapse>
+           </Box>
+
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <Button
+              type="submit"
+              variant="contained"
+              sx={{
+                backgroundColor: "#fcd535",
+                color: "#000",
+                '&:hover': { backgroundColor: "#fccd17" },
+                textTransform: 'none',
+                padding: '12px 40px',
+                fontSize: '18px'
+              }}
+            >
+              Build Model
+            </Button>
+          </Box>
         </form>
       </Paper>
 
@@ -1028,6 +1723,8 @@ const ModelTrainingForm = ({ initialData }) => {
       )}
     </Box>
   );
+
+  
 };
 
 export default ModelTrainingForm;

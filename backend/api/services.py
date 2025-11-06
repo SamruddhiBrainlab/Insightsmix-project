@@ -73,26 +73,72 @@ class ModelTrainingService:
 
     def _create_worker_pool_specs(self, training_params: Dict[str, Any]) -> list:
         """Create worker pool specifications for the training job."""
-        media = training_params.get("media")
-        mediaSpend = training_params.get("mediaSpend")
+        media = training_params.get("media", [])
+        mediaSpend = training_params.get("mediaSpend", [])
+        reach = training_params.get("reach", [])
+        frequency = training_params.get("frequency", [])
+        rf_spend = training_params.get("rf_spend", [])
 
+        # Helper function to extract channel name from any column name
+        def extract_channel_name(column_name):
+            """Extract channel name by removing common suffixes."""
+            if not column_name:
+                return ""
+            
+            channel_name = column_name.lower()
+            # Remove common suffixes
+            suffixes = [
+                "_spend", "_impression", "_reach", "_frequency",
+                "spend", "impression", "reach", "frequency"
+            ]
+            for suffix in suffixes:
+                channel_name = channel_name.replace(suffix, "")
+            
+            # Clean up any trailing underscores
+            channel_name = channel_name.strip("_")
+            return channel_name
+
+        # Process channel names for regular media
         channel_names = []
         for media_name in media:
-            media_name = (
-                media_name.lower()
-                .replace("_spend", "")
-                .replace("_impression", "")
-                .replace("spend", "")
-                .replace("impression", "")
-            )
-            channel_names.append(media_name)
+            channel_name = extract_channel_name(media_name)
+            channel_names.append(channel_name)
+
+        # Process channel names for reach/frequency media using rf_spend as reference
+        rf_channel_names = []
+        for rf_spend_name in rf_spend:
+            channel_name = extract_channel_name(rf_spend_name)
+            rf_channel_names.append(channel_name)
 
         # Correct mapping of media to channel
         CORRECT_MEDIA_TO_CHANNEL = {
-            media[i]: f"{channel_names[i]}" for i in range(len(media))
+            media[i]: channel_names[i] for i in range(len(media))
         }
         CORRECT_MEDIA_SPEND_TO_CHANNEL = {
-            mediaSpend[i]: f"{channel_names[i]}" for i in range(len(mediaSpend))
+            mediaSpend[i]: channel_names[i] for i in range(len(mediaSpend))
+        }
+
+        # Correct mapping for reach/frequency channels
+        CORRECT_REACH_TO_CHANNEL = {
+            reach[i]: rf_channel_names[i] for i in range(len(reach))
+        }
+        
+        # Handle frequency mapping - it could be a string or list
+        CORRECT_FREQUENCY_TO_CHANNEL = {}
+        if frequency:
+            if isinstance(frequency, str):
+                # If frequency is a single string, split by comma
+                frequency_list = [f.strip() for f in frequency.split(",") if f.strip()]
+            else:
+                # If it's already a list
+                frequency_list = frequency
+            
+            CORRECT_FREQUENCY_TO_CHANNEL = {
+                frequency_list[i]: rf_channel_names[i] for i in range(len(frequency_list))
+            }
+        
+        CORRECT_RF_SPEND_TO_CHANNEL = {
+            rf_spend[i]: rf_channel_names[i] for i in range(len(rf_spend))
         }
 
         date_range = training_params.get("dateRange")
@@ -100,6 +146,9 @@ class ModelTrainingService:
         # Convert the mappings to JSON string format
         CORRECT_MEDIA_TO_CHANNEL_JSON = json.dumps(CORRECT_MEDIA_TO_CHANNEL)
         CORRECT_MEDIA_SPEND_TO_CHANNEL_JSON = json.dumps(CORRECT_MEDIA_SPEND_TO_CHANNEL)
+        CORRECT_REACH_TO_CHANNEL_JSON = json.dumps(CORRECT_REACH_TO_CHANNEL)
+        CORRECT_FREQUENCY_TO_CHANNEL_JSON = json.dumps(CORRECT_FREQUENCY_TO_CHANNEL)
+        CORRECT_RF_SPEND_TO_CHANNEL_JSON = json.dumps(CORRECT_RF_SPEND_TO_CHANNEL)
 
         # Handle custom priors
         custom_priors = training_params.get("customPriors", {})
@@ -108,6 +157,17 @@ class ModelTrainingService:
         # Get organic media
         organic_media = training_params.get("organic_media", [])
         organic_media_str = ",".join(organic_media) if organic_media else ""
+        
+        # Handle lift tests
+        lift_tests = training_params.get("liftTests", [])
+        lift_tests_enabled = len(lift_tests) > 0
+        
+        # Check if reach/frequency mode is enabled
+        reach_frequency_mode = training_params.get("reachFrequencyMode", "without")
+        has_reach_frequency = len(reach) > 0
+
+        # Get advanced settings
+        advanced_settings = training_params.get("advancedSettings", {})
         
         # Build the args list
         args = [
@@ -138,22 +198,49 @@ class ModelTrainingService:
             "--revenue_per_kpi",
             training_params.get("revenuePerKpi", ""),
             "--organic_media",
-            ",".join(training_params.get("organic_media", [])),
+            organic_media_str,
             "--media",
-            ",".join(training_params.get("media", [])),
+            ",".join(media),
             "--media_spend",
-            ",".join(training_params.get("mediaSpend", [])),
+            ",".join(mediaSpend),
             "--correct_media_to_channel",
             CORRECT_MEDIA_TO_CHANNEL_JSON,
             "--correct_media_spend_to_channel",
             CORRECT_MEDIA_SPEND_TO_CHANNEL_JSON,
         ]
-        
-        # Add organic_media if present
-        if organic_media_str:
+
+        # Add advanced settings as JSON if present
+        if advanced_settings:
             args.extend([
-                "--organic_media",
-                organic_media_str,
+                "--advanced_settings",
+                json.dumps(advanced_settings)
+            ])
+            
+        # Add reach and frequency parameters if present
+        if has_reach_frequency:
+            # Handle frequency as string or list
+            frequency_str = ""
+            if frequency:
+                if isinstance(frequency, str):
+                    frequency_str = frequency
+                else:
+                    frequency_str = ",".join(frequency)
+            
+            args.extend([
+                "--reach",
+                ",".join(reach),
+                "--frequency",
+                frequency_str,
+                "--rf_spend",
+                ",".join(rf_spend),
+                "--correct_reach_to_channel",
+                CORRECT_REACH_TO_CHANNEL_JSON,
+                "--correct_frequency_to_channel",
+                CORRECT_FREQUENCY_TO_CHANNEL_JSON,
+                "--correct_rf_spend_to_channel",
+                CORRECT_RF_SPEND_TO_CHANNEL_JSON,
+                "--reach_frequency_mode",
+                reach_frequency_mode,
             ])
 
         # Add custom priors if enabled
@@ -177,8 +264,31 @@ class ModelTrainingService:
                     priors_json,
                 ])
 
+        # Add lift tests if present
+        if lift_tests_enabled:
+            lift_tests_json = json.dumps(lift_tests)
+            args.extend([
+                "--lift_test_enabled",
+                "true",
+                "--lift_tests",
+                lift_tests_json,
+                "--outcomeType",
+                training_params.get("outcomeType", "")
+            ])
+
         print("timestamp_folder", self.timestamp_folder)
         print("Custom priors args:", args[-4:] if custom_priors_enabled else "None")
+        print("Lift tests enabled:", lift_tests_enabled)
+        if lift_tests_enabled:
+            print(f"Lift tests data: {lift_tests}")
+        print("Reach/Frequency enabled:", has_reach_frequency)
+        if has_reach_frequency:
+            print(f"Reach channels: {reach}")
+            print(f"Frequency channels: {frequency}")
+            print(f"RF spend: {rf_spend}")
+            print(f"Reach to channel mapping: {CORRECT_REACH_TO_CHANNEL}")
+            print(f"Frequency to channel mapping: {CORRECT_FREQUENCY_TO_CHANNEL}")
+            print(f"RF spend to channel mapping: {CORRECT_RF_SPEND_TO_CHANNEL}")
         
         return [
             {
